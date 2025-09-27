@@ -1,0 +1,1 @@
+export const mentionProviders: unknown[] = [];
