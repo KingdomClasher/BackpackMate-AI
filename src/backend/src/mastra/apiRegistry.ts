@@ -57,11 +57,9 @@ export const apiRoutes = [
 
           const response = await processAssistantMessage(request.messages);
 
-          streamJSONEvent(controller, {
-            type: "message",
-            role: "assistant",
-            content: response.content,
-          });
+          const encoder = new TextEncoder();
+          const escaped = response.content.replace(/\n/g, "\\n");
+          controller.enqueue(encoder.encode(`data:${escaped}\n\n`));
 
           if (Array.isArray(response.object)) {
             response.object.forEach((obj) => streamJSONEvent(controller, obj));

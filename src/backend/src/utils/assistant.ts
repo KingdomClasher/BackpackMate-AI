@@ -1,15 +1,10 @@
 import { v4 as uuidv4 } from "uuid";
 import { ChatMessage, CedarLLMResponse } from "../schemas/trip";
-import { generateAssistantReply } from "./llm";
+import { callAssistantLLM } from "./llm";
 
 const timePattern = /(\d{1,2}:\d{2})\s*(?:[-–to]+)\s*(\d{1,2}:\d{2})/i;
 
 const cleanCity = (input: string) => input.trim().replace(/\.$/, "");
-
-interface ParsedCommand {
-  response: string;
-  objects?: unknown[];
-}
 
 const buildSetState = (
   stateKey: string,
@@ -22,7 +17,12 @@ const buildSetState = (
   args,
 });
 
-const handleAddTask = (message: string): ParsedCommand | null => {
+type CommandResult = {
+  response: string;
+  directives?: unknown[];
+};
+
+const handleAddTask = (message: string): CommandResult | null => {
   const match = message.match(/add (?:a )?task (?:called )?([\w\s]+?)(?: for| in) ([\w\s]+)/i);
   if (!match) return null;
   const [, taskTextRaw, cityRaw] = match;
@@ -32,7 +32,7 @@ const handleAddTask = (message: string): ParsedCommand | null => {
 
   return {
     response: `Added “${taskText}” to your ${city} checklist.`,
-    objects: [
+    directives: [
       buildSetState("destinationTasks", "addDestinationTask", {
         city,
         task: { id, text: taskText, done: false },
@@ -41,7 +41,7 @@ const handleAddTask = (message: string): ParsedCommand | null => {
   };
 };
 
-const handleToggleTask = (message: string): ParsedCommand | null => {
+const handleToggleTask = (message: string): CommandResult | null => {
   const match = message.match(/mark (.+?) (?:as )?(done|complete|completed)/i);
   if (!match) return null;
   const [, taskText] = match;
@@ -51,7 +51,7 @@ const handleToggleTask = (message: string): ParsedCommand | null => {
   };
 };
 
-const handleAddCalendarItem = (message: string): ParsedCommand | null => {
+const handleAddCalendarItem = (message: string): CommandResult | null => {
   const match = message.match(/add (.+?) in ([\w\s]+) (?:on ([\w\s-]+) )?(\d{1,2}:\d{2}[-–to]+\d{1,2}:\d{2})/i);
   if (!match) return null;
   const [, titleRaw, cityRaw, dateRaw, timeRange] = match;
@@ -76,24 +76,29 @@ export const processAssistantMessage = async (
     return { content: "How can I help with your trip?" };
   }
 
-  const commandHandlers = [
+  const commandHandlers: ((message: string) => CommandResult | null)[] = [
     handleAddTask,
     handleToggleTask,
     handleAddCalendarItem,
   ];
+  const directives: unknown[] = [];
 
   for (const handler of commandHandlers) {
     const result = handler(latestUser.content);
-    if (result) {
-      return {
-        content: result.response,
-        object: result.objects,
-      };
+    if (!result) continue;
+    if (result.directives) {
+      directives.push(...result.directives);
     }
+    return {
+      content: result.response,
+      object: directives.length ? directives : undefined,
+    };
   }
 
-  const aiReply = await generateAssistantReply(messages);
+  const { reply, directives: llmDirectives } = await callAssistantLLM(messages);
+
   return {
-    content: aiReply,
+    content: reply,
+    object: llmDirectives.length ? llmDirectives : directives.length ? directives : undefined,
   };
 };

@@ -1,53 +1,91 @@
 import OpenAI from "openai";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { ChatMessage } from "../schemas/trip";
 
-const SYSTEM_PROMPT = `You are BackpackMate, a helpful travel planning copilot.
-- Be concise, friendly, and practical.
-- Reference the current trip context when possible.
-- Offer next steps or suggestions if the user seems unsure.
-- You can suggest tasks or itinerary tweaks, but actual changes happen only when explicitly asked (the frontend will trigger setters).
-- If you need more info, ask a short clarifying question.
+const SYSTEM_PROMPT = `You are BackpackMate, a warm and practical travel copilot.
+- You specialise in itineraries, logistics, and keeping travellers on track.
+- Keep answers concise but actionable (1-2 short paragraphs or bullet lists).
+- Offer next steps or suggestions when the user seems unsure.
+- Respect that actual state changes happen in the UI; suggest, but don’t assume changes are made.
+- When unsure, ask a clarifying question instead of guessing.
 `;
 
 const FALLBACK_RESPONSE =
-  "Got it! Let me know if you'd like me to add tasks, adjust the schedule, or dive deeper.";
+  "Got it! Let me know if you'd like help adding tasks or tweaking the itinerary.";
 
-let openaiClient: OpenAI | null = null;
+let cachedClient: OpenAI | null = null;
 
 const getClient = () => {
-  if (openaiClient) return openaiClient;
+  if (cachedClient) return cachedClient;
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
-  openaiClient = new OpenAI({ apiKey });
-  return openaiClient;
+  cachedClient = new OpenAI({ apiKey });
+  return cachedClient;
 };
 
-export async function generateAssistantReply(messages: ChatMessage[]): Promise<string> {
+interface LLMResult {
+  reply: string;
+  directives: unknown[];
+}
+
+export async function callAssistantLLM(messages: ChatMessage[]): Promise<LLMResult> {
   const client = getClient();
   if (!client) {
-    return FALLBACK_RESPONSE;
+    return { reply: FALLBACK_RESPONSE, directives: [] };
   }
 
-  try {
-    const formatted = messages.map((message) => ({
-      role: message.role,
-      content: message.content,
-    }));
+  const formatted: ChatCompletionMessageParam[] = messages.map((message) => ({
+    role: message.role,
+    content: message.content,
+  }));
 
-    const completion = await client.chat.completions.create({
+  try {
+    const response = await client.chat.completions.create({
       model: "gpt-4o-mini",
-      temperature: 0.6,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         ...formatted,
       ],
+      temperature: 0.6,
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "assistantHandlers",
+          schema: {
+            type: "object",
+            properties: {
+              reply: { type: "string" },
+              directives: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    type: { type: "string" },
+                  },
+                  required: ["type"],
+                  additionalProperties: true,
+                },
+                default: [],
+              },
+            },
+            required: ["reply"],
+          },
+        },
+      },
     });
 
-    return (
-      completion.choices?.[0]?.message?.content?.trim() ?? FALLBACK_RESPONSE
-    );
+    const content = response.choices?.[0]?.message?.content;
+    if (!content) {
+      return { reply: FALLBACK_RESPONSE, directives: [] };
+    }
+
+    const parsed = JSON.parse(content) as { reply: string; directives?: unknown[] };
+    return {
+      reply: parsed.reply?.trim() || FALLBACK_RESPONSE,
+      directives: Array.isArray(parsed.directives) ? parsed.directives : [],
+    };
   } catch (error) {
-    console.error("LLM response failed", error);
-    return FALLBACK_RESPONSE;
+    console.error("Assistant LLM call failed", error);
+    return { reply: FALLBACK_RESPONSE, directives: [] };
   }
 }
