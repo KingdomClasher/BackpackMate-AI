@@ -72,7 +72,7 @@ Visit [http://localhost:3000](http://localhost:3000) to use the app. The fronten
 | POST   | `/chat/execute-function`               | Processes assistant message (non-streaming) |
 | POST   | `/chat/execute-function/stream`        | SSE streaming variant for assistant         |
 
-The backend responses follow Cedar’s `LLMResponse` contract, returning `message`, `progress_update`, and `setState` objects to mutate frontend state via registered setters.
+The backend responses follow Cedar's `LLMResponse` contract, returning `message`, `progress_update`, and `setState` objects to mutate frontend state via registered setters.
 
 ## Project structure highlights
 
