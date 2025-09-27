@@ -8,6 +8,13 @@ import {
   visaCheckTool,
   notesSearchTool,
 } from '../tools/travel-tools';
+import {
+  createTripTool,
+  createTripFromAnswersTool,
+  getTripTool,
+  updateTripTool,
+  deleteTripTool,
+} from '../tools/trip-tools';
 
 export const travelAgent = new Agent({
   name: 'BackpackMate Agent',
@@ -20,7 +27,17 @@ You are BackpackMate — an assistant for multi-country backpacking.
 - When planning, structure days with city, 2–3 activities, and rough costs.
   `,
   model: openai('gpt-4o-mini'),
-  tools: { routeSearchTool, hostelSuggestTool, visaCheckTool, notesSearchTool },
+  tools: {
+    routeSearchTool,
+    hostelSuggestTool,
+    visaCheckTool,
+    notesSearchTool,
+    createTripTool,
+    createTripFromAnswersTool,
+    getTripTool,
+    updateTripTool,
+    deleteTripTool,
+  },
   memory: new Memory({
     storage: new LibSQLStore({
       url: 'file:../mastra.db', // same as scaffold

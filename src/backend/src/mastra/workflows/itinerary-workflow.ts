@@ -1,12 +1,18 @@
 import { createStep, createWorkflow } from '@mastra/core/workflows';
 import { z } from 'zod';
+import { tripService } from '../../services/tripService';
+import { transformAnswersToDatabase, AnswersSchema } from '../../schemas/trip';
 
 const planInput = z.object({
   prompt: z.string().describe('Trip request, e.g., "7 days Spain -> Portugal -> Morocco, $700 budget"'),
+  answers: AnswersSchema.optional().describe('Optional onboarding answers to create a trip'),
+  tripId: z.string().uuid().optional().describe('Optional existing trip ID to update'),
 });
 
 const planOutput = z.object({
   itinerary: z.string(), // keep as markdown for speed; JSON optional
+  tripId: z.string().uuid().optional().describe('ID of the created/updated trip'),
+  trip: z.record(z.unknown()).optional().describe('The trip data if saved to database'),
 });
 
 const planItinerary = createStep({
@@ -49,7 +55,34 @@ FORMAT (markdown):
       process.stdout.write(chunk);
       text += chunk;
     }
-    return { itinerary: text };
+
+    // Optionally save to database if answers or tripId provided
+    let tripId: string | undefined;
+    let trip: any;
+
+    if (inputData.answers) {
+      // Create new trip from answers
+      const tripData = transformAnswersToDatabase(inputData.answers);
+      trip = await tripService.createTrip(tripData);
+      tripId = trip.id;
+
+      // Save the generated itinerary
+      trip = await tripService.updateTrip(trip.id, {
+        itinerary: { markdown: text, generatedAt: new Date().toISOString() },
+      });
+    } else if (inputData.tripId) {
+      // Update existing trip with itinerary
+      tripId = inputData.tripId;
+      trip = await tripService.updateTrip(inputData.tripId, {
+        itinerary: { markdown: text, generatedAt: new Date().toISOString() },
+      });
+    }
+
+    return {
+      itinerary: text,
+      tripId,
+      trip,
+    };
   },
 });
 

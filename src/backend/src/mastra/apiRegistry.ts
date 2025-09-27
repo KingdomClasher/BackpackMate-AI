@@ -1,0 +1,268 @@
+import { registerApiRoute } from "@mastra/core/server";
+import { z } from "zod";
+import {
+  AnswersSchema,
+  ChatRequest,
+  ChatRequestSchema,
+  ProposalResponseSchema,
+  CreateTripSchema,
+  UpdateTripSchema,
+  transformAnswersToDatabase
+} from "../schemas/trip";
+import { generateItineraryProposal } from "../utils/itineraryGenerator";
+import { processAssistantMessage } from "../utils/assistant";
+import { createSSEStream, streamJSONEvent } from "../utils/streamUtils";
+import { tripService } from "../services/tripService";
+
+const ProposalRequestSchema = z.object({
+  answers: AnswersSchema,
+});
+
+// Request/Response schemas for trip routes
+const TripIdParamsSchema = z.object({
+  id: z.string().uuid(),
+});
+
+// Original routes (keeping for backward compatibility)
+const originalRoutes = [
+  registerApiRoute("/onboarding/itinerary-proposal", {
+    method: "POST",
+    handler: async (context) => {
+      try {
+        const body = await context.req.json();
+        const { answers } = ProposalRequestSchema.parse(body);
+        const proposal = generateItineraryProposal(answers);
+        return context.json(ProposalResponseSchema.parse(proposal));
+      } catch (error) {
+        console.error("Itinerary proposal failed", error);
+        const message =
+          error instanceof Error ? error.message : "Unable to generate itinerary";
+        return context.json({ error: message }, 500);
+      }
+    },
+  }),
+  registerApiRoute("/chat/execute-function", {
+    method: "POST",
+    handler: async (context) => {
+      try {
+        const body = await context.req.json();
+        const request = normalizeChatRequest(body);
+        const response = await processAssistantMessage(request.messages);
+        return context.json(response);
+      } catch (error) {
+        console.error("Chat handler error", error);
+        const message =
+          error instanceof Error ? error.message : "Assistant could not process the request";
+        return context.json({ error: message }, 500);
+      }
+    },
+  }),
+  registerApiRoute("/chat/execute-function/stream", {
+    method: "POST",
+    handler: async (context) => {
+      try {
+        const body = await context.req.json();
+        const request = normalizeChatRequest(body);
+        return createSSEStream(async (controller) => {
+          streamJSONEvent(controller, {
+            type: "progress_update",
+            text: "Understanding request",
+            state: "in_progress",
+          });
+
+          const response = await processAssistantMessage(request.messages);
+
+          const encoder = new TextEncoder();
+          const escaped = response.content.replace(/\n/g, "\\n");
+          controller.enqueue(encoder.encode(`data:${escaped}\n\n`));
+
+          if (Array.isArray(response.object)) {
+            response.object.forEach((obj) => streamJSONEvent(controller, obj));
+          } else if (response.object) {
+            streamJSONEvent(controller, response.object);
+          }
+
+          streamJSONEvent(controller, {
+            type: "progress_update",
+            text: "All set",
+            state: "complete",
+          });
+        });
+      } catch (error) {
+        console.error("Chat stream error", error);
+        const message =
+          error instanceof Error ? error.message : "Assistant could not process the request";
+        return context.json({ error: message }, 500);
+      }
+    },
+  }),
+];
+
+const PromptFallbackSchema = z.object({
+  prompt: z.string(),
+  systemPrompt: z.string().optional(),
+  resourceId: z.string().optional(),
+  threadId: z.string().optional(),
+});
+
+const normalizeChatRequest = (payload: unknown): ChatRequest => {
+  const parsed = ChatRequestSchema.safeParse(payload);
+  if (parsed.success) {
+    return parsed.data;
+  }
+
+  const fallback = PromptFallbackSchema.safeParse(payload);
+  if (fallback.success) {
+    const { prompt, systemPrompt, resourceId, threadId } = fallback.data;
+    const messages = [
+      ...(systemPrompt
+        ? [{ role: "system" as const, content: systemPrompt }]
+        : []),
+      { role: "user" as const, content: prompt },
+    ];
+    return { messages, resourceId, threadId };
+  }
+
+  throw parsed.error;
+};
+
+// Trip routes
+const tripRoutes = [
+  // Create a new trip
+  registerApiRoute("/trips", {
+    method: "POST",
+    handler: async (context) => {
+      try {
+        const body = await context.req.json();
+        const tripData = CreateTripSchema.parse(body);
+
+        const trip = await tripService.createTrip(tripData);
+
+        return context.json({
+          success: true,
+          data: trip,
+        }, 201);
+      } catch (error) {
+        console.error("Create trip error:", error);
+        const message = error instanceof Error ? error.message : "Failed to create trip";
+        return context.json({
+          success: false,
+          error: message
+        }, 400);
+      }
+    },
+  }),
+
+  // Create trip from onboarding answers
+  registerApiRoute("/trips/from-answers", {
+    method: "POST",
+    handler: async (context) => {
+      try {
+        const body = await context.req.json();
+        const answers = AnswersSchema.parse(body);
+
+        const tripData = transformAnswersToDatabase(answers);
+        const trip = await tripService.createTrip(tripData);
+
+        return context.json({
+          success: true,
+          data: trip,
+        }, 201);
+      } catch (error) {
+        console.error("Create trip from answers error:", error);
+        const message = error instanceof Error ? error.message : "Failed to create trip from answers";
+        return context.json({
+          success: false,
+          error: message
+        }, 400);
+      }
+    },
+  }),
+
+  // Get trip by ID
+  registerApiRoute("/trips/:id", {
+    method: "GET",
+    handler: async (context) => {
+      try {
+        const { id } = TripIdParamsSchema.parse({ id: context.req.param('id') });
+
+        const trip = await tripService.getTripById(id);
+
+        if (!trip) {
+          return context.json({
+            success: false,
+            error: "Trip not found",
+          }, 404);
+        }
+
+        return context.json({
+          success: true,
+          data: trip,
+        });
+      } catch (error) {
+        console.error("Get trip error:", error);
+        const message = error instanceof Error ? error.message : "Failed to get trip";
+        return context.json({
+          success: false,
+          error: message
+        }, 400);
+      }
+    },
+  }),
+
+  // Update trip
+  registerApiRoute("/trips/:id", {
+    method: "PUT",
+    handler: async (context) => {
+      try {
+        const { id } = TripIdParamsSchema.parse({ id: context.req.param('id') });
+        const body = await context.req.json();
+        const updates = UpdateTripSchema.parse(body);
+
+        const trip = await tripService.updateTrip(id, updates);
+
+        return context.json({
+          success: true,
+          data: trip,
+        });
+      } catch (error) {
+        console.error("Update trip error:", error);
+        const message = error instanceof Error ? error.message : "Failed to update trip";
+        return context.json({
+          success: false,
+          error: message
+        }, 400);
+      }
+    },
+  }),
+
+  // Delete trip
+  registerApiRoute("/trips/:id", {
+    method: "DELETE",
+    handler: async (context) => {
+      try {
+        const { id } = TripIdParamsSchema.parse({ id: context.req.param('id') });
+
+        await tripService.deleteTrip(id);
+
+        return context.json({
+          success: true,
+          message: "Trip deleted successfully",
+        });
+      } catch (error) {
+        console.error("Delete trip error:", error);
+        const message = error instanceof Error ? error.message : "Failed to delete trip";
+        return context.json({
+          success: false,
+          error: message
+        }, 400);
+      }
+    },
+  }),
+];
+
+// Combine all routes
+export const apiRoutes = [
+  ...originalRoutes,
+  ...tripRoutes,
+];

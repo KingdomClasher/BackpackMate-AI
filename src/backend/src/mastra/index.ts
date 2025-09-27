@@ -23,6 +23,7 @@ import { PinoLogger } from '@mastra/loggers';
 import { LibSQLStore } from '@mastra/libsql';
 import { itineraryWorkflow } from './workflows/itinerary-workflow';
 import { travelAgent } from './agents/travel-agent';
+import { apiRoutes } from './apiRegistry';
 
 export const mastra = new Mastra({
   workflows: { itineraryWorkflow },
@@ -31,4 +32,7 @@ export const mastra = new Mastra({
     url: ':memory:', // for hackathon speed; swap to file:../mastra.db if you want persistence
   }),
   logger: new PinoLogger({ name: 'Mastra', level: 'info' }),
+  server: {
+    apiRoutes,
+  },
 });
