@@ -1,5 +1,8 @@
 import { registerApiRoute } from "@mastra/core/server";
 import { z } from "zod";
+import { itineraryWorkflow } from './workflows/itinerary-workflow';
+import type { Mastra } from '@mastra/core/mastra';
+import { mastra } from './index';
 import {
   AnswersSchema,
   ChatRequest,
@@ -13,6 +16,7 @@ import { generateItineraryProposal } from "../utils/itineraryGenerator";
 import { processAssistantMessage } from "../utils/assistant";
 import { createSSEStream, streamJSONEvent } from "../utils/streamUtils";
 import { tripService } from "../services/tripService";
+import { generateIcsFromTrip } from "../utils/ics";
 
 const ProposalRequestSchema = z.object({
   answers: AnswersSchema,
@@ -136,6 +140,7 @@ const tripRoutes = [
         const body = await context.req.json();
         const tripData = CreateTripSchema.parse(body);
 
+
         const trip = await tripService.createTrip(tripData);
 
         return context.json({
@@ -159,10 +164,35 @@ const tripRoutes = [
     handler: async (context) => {
       try {
         const body = await context.req.json();
-        const answers = AnswersSchema.parse(body);
-
-        const tripData = transformAnswersToDatabase(answers);
+        const answers = AnswersSchema.parse(body); // this comes from trip.ts which is the questions from which prompt would be made.
+        
+        // call the iterinary and taks !! 
+        
+        const tripData = transformAnswersToDatabase(answers);  // format it to supabase!! 
+        
         const trip = await tripService.createTrip(tripData);
+
+        // const prompt =
+        //   `Plan a student-budget backpacking itinerary.\n` +
+        //   `Dates: ${answers.dates}\n` +
+        //   `Destinations: ${answers.destinations}\n` +
+        //   `Preferences: ${answers.preferences || 'none'}\n` +
+        //   `Budget: ${answers.budget || 'unspecified'}\n` +
+        //   `Citizenship: ${answers.citizenship || 'unspecified'}`;
+        
+        
+        // const agent = mastra?.getAgent('travelAgent');
+        // const stream = await agent.stream([{ role: 'user', content: prompt }]);
+        // let text = '';
+        // for await (const chunk of stream.textStream) {
+        //   process.stdout.write(chunk);
+        //   text += chunk;
+        // }
+        // const itinerary = text.trim();
+        // await tripService.updateTrip(trip.id, {
+        //   itinerary: { markdown: itinerary, generatedAt: new Date().toISOString() },
+        // });
+        // console.log(itinerary);
 
         return context.json({
           success: true,
@@ -185,7 +215,6 @@ const tripRoutes = [
     handler: async (context) => {
       try {
         const { id } = TripIdParamsSchema.parse({ id: context.req.param('id') });
-
         const trip = await tripService.getTripById(id);
 
         if (!trip) {
@@ -206,6 +235,32 @@ const tripRoutes = [
           success: false,
           error: message
         }, 400);
+      }
+    },
+  }),
+
+  // Downloadable ICS for a trip itinerary
+  registerApiRoute("/trips/:id/ics", {
+    method: "GET",
+    handler: async (context) => {
+      try {
+        const { id } = TripIdParamsSchema.parse({ id: context.req.param('id') });
+        const trip = await tripService.getTripById(id);
+        if (!trip) {
+          return context.json({ success: false, error: 'Trip not found' }, 404);
+        }
+
+        const { filename, content } = generateIcsFromTrip(trip);
+
+        // Return as downloadable attachment with text/calendar MIME type
+        return context.text(content, 200, {
+          'Content-Type': 'text/calendar; charset=utf-8',
+          'Content-Disposition': `attachment; filename="${filename}"`,
+        });
+      } catch (error) {
+        console.error('Generate ICS error:', error);
+        const message = error instanceof Error ? error.message : 'Failed to generate ICS';
+        return context.json({ success: false, error: message }, 400);
       }
     },
   }),
