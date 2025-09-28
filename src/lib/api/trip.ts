@@ -89,6 +89,12 @@ export interface TripApiResponse {
   error?: string;
 }
 
+export interface UpdateTaskResponse {
+  success: boolean;
+  data?: any;
+  error?: string;
+}
+
 /**
  * Fetches a trip by ID from the backend
  */
@@ -140,18 +146,28 @@ export async function fetchTripById(id: string): Promise<TripApiResponse> {
   }
 }
 
+interface UseTripDataReturn {
+  data: TripState | null;
+  loading: boolean;
+  error: string | null;
+  statusCode: number | null;
+  refetch: () => void;
+}
+
 /**
  * Hook for fetching trip data with loading and error states
  */
-export function useTripData(id: string | null) {
+export function useTripData(id: string | null): UseTripDataReturn {
   const [data, setData] = React.useState<TripState | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [statusCode, setStatusCode] = React.useState<number | null>(null);
 
   React.useEffect(() => {
     if (!id) {
       setData(null);
       setError(null);
+      setStatusCode(null);
       return;
     }
 
@@ -200,6 +216,40 @@ export function useTripData(id: string | null) {
     data,
     loading,
     error,
+    statusCode,
     refetch,
   };
+}
+
+/**
+ * Updates a task's completion status
+ */
+export async function updateTaskCompletion(
+  tripId: string,
+  taskId: string,
+  done: boolean
+): Promise<UpdateTaskResponse> {
+  try {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4112';
+    const response = await fetch(`${backendUrl}/trips/${tripId}/tasks/${taskId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ done }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to update task: ${response.status}`);
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error('Error updating task completion:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update task completion',
+    };
+  }
 }

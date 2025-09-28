@@ -1,19 +1,28 @@
 "use client";
 
-import { useState } from "react";
-import { TripState } from "@/lib/types/trip";
+import { useState, useEffect } from "react";
+import { TripState, Tasks } from "@/lib/types/trip";
+import { updateTaskCompletion } from "@/lib/api/trip";
 
 interface TasksTabContentProps {
   tripData: TripState;
+  tripId: string;
 }
 
-export function TasksTabContent({ tripData }: TasksTabContentProps) {
-  // Local state for task completion (in a real app, this would sync with backend)
-  const [completedTasks, setCompletedTasks] = useState<Set<string>>(new Set());
+export function TasksTabContent({ tripData, tripId }: TasksTabContentProps) {
+  // Local state for optimistic updates
+  const [localTasks, setLocalTasks] = useState<Tasks | undefined>(tripData.tasks);
+  const [updatingTasks, setUpdatingTasks] = useState<Set<string>>(new Set());
+  const [error, setError] = useState<string | null>(null);
 
-  // Use only the new tasks format
-  const generalTasks = tripData.tasks?.generalTasks || [];
-  const destinationSpecificTasks = tripData.tasks?.destinationSpecificTasks || [];
+  // Update local state when tripData changes (from external updates)
+  useEffect(() => {
+    setLocalTasks(tripData.tasks);
+  }, [tripData.tasks]);
+
+  // Use local tasks for optimistic updates
+  const generalTasks = localTasks?.generalTasks || [];
+  const destinationSpecificTasks = localTasks?.destinationSpecificTasks || [];
 
   // Group destination-specific tasks by location for display
   const destinationTasksByLocation = destinationSpecificTasks.reduce((acc, task) => {
@@ -26,24 +35,69 @@ export function TasksTabContent({ tripData }: TasksTabContentProps) {
 
   const hasDestinationTasks = destinationSpecificTasks.length > 0;
 
-  const toggleTask = (taskId: string) => {
-    setCompletedTasks(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(taskId)) {
-        newSet.delete(taskId);
-      } else {
-        newSet.add(taskId);
-      }
-      return newSet;
+  const toggleTask = async (taskId: string, currentDone: boolean) => {
+    const newDone = !currentDone;
+
+    // Optimistic update - immediately update local state
+    setLocalTasks(prevTasks => {
+      if (!prevTasks) return prevTasks;
+
+      return {
+        generalTasks: prevTasks.generalTasks?.map(task =>
+          task.id === taskId ? { ...task, done: newDone } : task
+        ) || [],
+        destinationSpecificTasks: prevTasks.destinationSpecificTasks?.map(task =>
+          task.id === taskId ? { ...task, done: newDone } : task
+        ) || [],
+      };
     });
+
+    // Add to updating set for visual feedback
+    setUpdatingTasks(prev => new Set(prev).add(taskId));
+    setError(null);
+
+    try {
+      const result = await updateTaskCompletion(tripId, taskId, newDone);
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to update task');
+      }
+
+      // Optionally refresh data in background (without causing UI flash)
+      // We don't call onTaskUpdate() here to avoid re-rendering
+    } catch (err) {
+      console.error('Error updating task:', err);
+      setError(err instanceof Error ? err.message : 'Failed to update task');
+
+      // Revert optimistic update on error
+      setLocalTasks(prevTasks => {
+        if (!prevTasks) return prevTasks;
+
+        return {
+          generalTasks: prevTasks.generalTasks?.map(task =>
+            task.id === taskId ? { ...task, done: currentDone } : task
+          ) || [],
+          destinationSpecificTasks: prevTasks.destinationSpecificTasks?.map(task =>
+            task.id === taskId ? { ...task, done: currentDone } : task
+          ) || [],
+        };
+      });
+    } finally {
+      // Remove from updating set
+      setUpdatingTasks(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(taskId);
+        return newSet;
+      });
+    }
   };
 
   const getTaskStats = () => {
     const totalGeneral = generalTasks.length;
-    const completedGeneral = generalTasks.filter(task => completedTasks.has(task.id)).length;
+    const completedGeneral = generalTasks.filter(task => task.done).length;
 
     const totalDestination = destinationSpecificTasks.length;
-    const completedDestination = destinationSpecificTasks.filter(task => completedTasks.has(task.id)).length;
+    const completedDestination = destinationSpecificTasks.filter(task => task.done).length;
 
     return {
       total: totalGeneral + totalDestination,
@@ -56,6 +110,27 @@ export function TasksTabContent({ tripData }: TasksTabContentProps) {
   };
 
   const stats = getTaskStats();
+
+  // Error display
+  if (error) {
+    return (
+      <div className="rounded-2xl border border-red-200 bg-red-50 p-6 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="text-red-600">⚠️</div>
+          <div>
+            <h3 className="font-semibold text-red-900">Error updating task</h3>
+            <p className="text-sm text-red-700">{error}</p>
+            <button
+              onClick={() => setError(null)}
+              className="mt-2 text-sm text-red-600 underline hover:text-red-800"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (generalTasks.length === 0 && !hasDestinationTasks) {
     return (
@@ -133,7 +208,7 @@ export function TasksTabContent({ tripData }: TasksTabContentProps) {
             </header>
             <ul className="space-y-2">
               {generalTasks.map((task) => {
-                const isCompleted = completedTasks.has(task.id);
+                const isUpdating = updatingTasks.has(task.id);
                 return (
                   <li
                     key={task.id}
@@ -142,13 +217,17 @@ export function TasksTabContent({ tripData }: TasksTabContentProps) {
                     <label className="flex flex-1 cursor-pointer items-center gap-3">
                       <input
                         type="checkbox"
-                        checked={isCompleted}
-                        onChange={() => toggleTask(task.id)}
-                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        checked={task.done}
+                        onChange={() => toggleTask(task.id, task.done)}
+                        disabled={isUpdating}
+                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
                       />
-                      <span className={`flex-1 ${isCompleted ? 'line-through text-slate-500' : 'text-slate-900'}`}>
+                      <span className={`flex-1 ${task.done ? 'line-through text-slate-500' : 'text-slate-900'} ${isUpdating ? 'opacity-50' : ''}`}>
                         {task.text}
                       </span>
+                      {isUpdating && (
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600"></div>
+                      )}
                     </label>
                   </li>
                 );
@@ -173,7 +252,7 @@ export function TasksTabContent({ tripData }: TasksTabContentProps) {
             </header>
             <div className="space-y-6">
               {Object.entries(destinationTasksByLocation).map(([location, tasks]) => {
-                const locationCompleted = tasks.filter(task => completedTasks.has(task.id)).length;
+                const locationCompleted = tasks.filter(task => task.done).length;
                 return (
                   <div key={location}>
                     <h3 className="mb-3 flex items-center justify-between text-base font-medium text-slate-900">
@@ -184,7 +263,7 @@ export function TasksTabContent({ tripData }: TasksTabContentProps) {
                     </h3>
                     <ul className="space-y-2">
                       {tasks.map((task) => {
-                        const isCompleted = completedTasks.has(task.id);
+                        const isUpdating = updatingTasks.has(task.id);
                         return (
                           <li
                             key={task.id}
@@ -193,13 +272,17 @@ export function TasksTabContent({ tripData }: TasksTabContentProps) {
                             <label className="flex flex-1 cursor-pointer items-center gap-3">
                               <input
                                 type="checkbox"
-                                checked={isCompleted}
-                                onChange={() => toggleTask(task.id)}
-                                className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500"
+                                checked={task.done}
+                                onChange={() => toggleTask(task.id, task.done)}
+                                disabled={isUpdating}
+                                className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 disabled:opacity-50"
                               />
-                              <span className={`flex-1 ${isCompleted ? 'line-through text-slate-500' : 'text-slate-900'}`}>
+                              <span className={`flex-1 ${task.done ? 'line-through text-slate-500' : 'text-slate-900'} ${isUpdating ? 'opacity-50' : ''}`}>
                                 {task.text}
                               </span>
+                              {isUpdating && (
+                                <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-purple-600"></div>
+                              )}
                             </label>
                           </li>
                         );

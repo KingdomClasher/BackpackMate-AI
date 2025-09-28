@@ -304,6 +304,63 @@ const tripRoutes = [
       }
     },
   }),
+
+  // Update task completion status
+  registerApiRoute("/trips/:id/tasks/:taskId", {
+    method: "PATCH",
+    handler: async (context) => {
+      try {
+        const { id } = TripIdParamsSchema.parse({ id: context.req.param('id') });
+        const taskId = context.req.param('taskId');
+        const body = await context.req.json();
+        const { done } = z.object({ done: z.boolean() }).parse(body);
+
+        // Get the current trip
+        const trip = await tripService.getTripById(id);
+        if (!trip) {
+          return context.json({
+            success: false,
+            error: "Trip not found",
+          }, 404);
+        }
+
+        // Update the task completion status
+        let updatedTasks = trip.tasks;
+        if (updatedTasks && typeof updatedTasks === 'object') {
+          const tasks = updatedTasks as any;
+
+          // Update in generalTasks
+          if (tasks.generalTasks) {
+            tasks.generalTasks = tasks.generalTasks.map((task: any) =>
+              task.id === taskId ? { ...task, done } : task
+            );
+          }
+
+          // Update in destinationSpecificTasks
+          if (tasks.destinationSpecificTasks) {
+            tasks.destinationSpecificTasks = tasks.destinationSpecificTasks.map((task: any) =>
+              task.id === taskId ? { ...task, done } : task
+            );
+          }
+        }
+
+        // Update the trip with the modified tasks
+        const updatedTrip = await tripService.updateTrip(id, { tasks: updatedTasks });
+
+        return context.json({
+          success: true,
+          data: updatedTrip,
+        });
+      } catch (error) {
+        console.error("Update task error:", error);
+        const message = error instanceof Error ? error.message : "Failed to update task";
+        return context.json({
+          success: false,
+          error: message
+        }, 400);
+      }
+    },
+  }),
 ];
 
 // Combine all routes

@@ -14,7 +14,7 @@ type TabType = "overview" | "itinerary" | "tasks";
 
 export function TripDisplay({ tripId }: TripDisplayProps) {
   const [activeTab, setActiveTab] = useState<TabType>("overview");
-  const { data: tripData, loading, error, refetch } = useTripData(tripId);
+  const { data: tripData, loading, error, statusCode, refetch } = useTripData(tripId);
 
   if (loading) {
     return (
@@ -28,12 +28,35 @@ export function TripDisplay({ tripId }: TripDisplayProps) {
   }
 
   if (error) {
+    // Show "Trip Not Found" only for 404 errors
+    if (statusCode === 404) {
+      return (
+        <div className="flex min-h-screen items-center justify-center">
+          <div className="text-center">
+            <div className="mb-4 text-6xl">🧳</div>
+            <h1 className="mb-2 text-xl font-semibold text-slate-900">Trip Not Found</h1>
+            <p className="text-slate-600">The trip you&apos;re looking for doesn&apos;t exist or may have been deleted.</p>
+            <button
+              onClick={() => window.history.back()}
+              className="mt-4 rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+            >
+              Go Back
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // Show generic error for other types of errors
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
           <div className="mb-4 rounded-2xl bg-red-50 p-6">
             <div className="mb-2 text-red-800">⚠️ Error Loading Trip</div>
             <p className="text-sm text-red-600">{error}</p>
+            {statusCode && (
+              <p className="mt-1 text-xs text-red-500">Status: {statusCode}</p>
+            )}
           </div>
           <button
             onClick={refetch}
@@ -46,13 +69,13 @@ export function TripDisplay({ tripId }: TripDisplayProps) {
     );
   }
 
+  // This should never happen now since we handle all error cases above
   if (!tripData) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center">
-          <div className="mb-4 text-6xl">🧳</div>
-          <h1 className="mb-2 text-xl font-semibold text-slate-900">Trip Not Found</h1>
-          <p className="text-slate-600">The trip you&apos;re looking for doesn&apos;t exist.</p>
+          <div className="mb-4 h-8 w-8 animate-spin rounded-full border-4 border-slate-300 border-t-slate-900"></div>
+          <p className="text-slate-600">Loading your trip...</p>
         </div>
       </div>
     );
@@ -106,7 +129,12 @@ export function TripDisplay({ tripId }: TripDisplayProps) {
       <div className="min-h-[400px]">
         {activeTab === "overview" && <BasicInfoTab tripData={tripData} />}
         {activeTab === "itinerary" && <ItineraryTabContent tripData={tripData} />}
-        {activeTab === "tasks" && <TasksTabContent tripData={tripData} />}
+        {activeTab === "tasks" && (
+          <TasksTabContent
+            tripData={tripData}
+            tripId={tripId}
+          />
+        )}
       </div>
     </div>
   );
