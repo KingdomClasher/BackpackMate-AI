@@ -4,7 +4,6 @@ import React, {
   PropsWithChildren,
   createContext,
   useContext,
-  useEffect,
   useMemo,
   useReducer,
 } from "react";
@@ -19,7 +18,6 @@ import {
   QAKeySchema,
   TripAction,
   TripState,
-  TripStateSchema,
   createInitialTripState,
 } from "@/lib/types/trip";
 import { tripReducer } from "@/lib/state/tripReducer";
@@ -29,8 +27,10 @@ const TripStateContext = createContext<TripState | undefined>(undefined);
 const TripDispatchContext =
   createContext<React.Dispatch<TripAction> | undefined>(undefined);
 
-const STORAGE_KEY = "backpackmate-trip-state-v1";
-const AnswerSetterSchema = z.object({ key: QAKeySchema, value: z.string() });
+const AnswerSetterSchema = z.object({
+  key: QAKeySchema,
+  value: z.union([z.string(), z.array(z.string()), z.boolean()])
+});
 const ApprovedItineraryArgsSchema = z.object({ days: z.array(ItineraryDaySchema) });
 const ToggleGeneralTaskSchema = z.object({ id: z.string() });
 const ToggleDestinationTaskSchema = z.object({ city: z.string(), id: z.string() });
@@ -38,37 +38,7 @@ const AddDestinationTaskSchema = z.object({ city: z.string(), task: ItineraryTas
 const ReplaceDestinationTasksSchema = z.object({ tasks: DestinationTasksSchema });
 
 export const TripProvider = ({ children }: PropsWithChildren) => {
-  const [state, dispatch] = useReducer(tripReducer, undefined, () => {
-    if (typeof window === "undefined") {
-      return createInitialTripState();
-    }
-
-    try {
-      const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (!stored) {
-        return createInitialTripState();
-      }
-
-      const parsed = TripStateSchema.parse(JSON.parse(stored));
-      return parsed;
-    } catch (error) {
-      console.warn("Failed to hydrate trip state", error);
-      return createInitialTripState();
-    }
-  });
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const payload: TripState = {
-        ...state,
-        lastSavedAt: new Date().toISOString(),
-      };
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-    } catch (error) {
-      console.warn("Failed to persist trip state", error);
-    }
-  }, [state]);
+  const [state, dispatch] = useReducer(tripReducer, createInitialTripState());
 
   const answerSetters = useMemo(
     () => ({

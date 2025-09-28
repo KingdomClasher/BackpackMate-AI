@@ -25,7 +25,7 @@ export function tripReducer(state: TripState, action: TripAction): TripState {
   return produce(state, (draft) => {
     switch (action.type) {
       case "SET_ANSWER": {
-        draft.answers[action.key] = action.value;
+        (draft.answers as any)[action.key] = action.value;
         if (!draft.answeredKeys.includes(action.key)) {
           draft.answeredKeys.push(action.key);
         }
@@ -58,6 +58,10 @@ export function tripReducer(state: TripState, action: TripAction): TripState {
           draft.questionIndex + 1,
           draft.answeredKeys.length
         );
+        return;
+      }
+      case "GO_BACK_QUESTION": {
+        draft.questionIndex = Math.max(draft.questionIndex - 1, 0);
         return;
       }
       case "TOGGLE_GENERAL_TASK": {

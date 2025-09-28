@@ -1,16 +1,47 @@
 import { z } from "zod";
 
 export const QAKeySchema = z.enum([
-  "dates",
   "destinations",
+  "starting_point",
+  "end_point",
+  "dates",
+  "flexible_dates",
   "preferences",
-  "budget",
+  "transportation",
+  "things_to_do",
+  "food_dietary",
   "citizenship",
+  "budget",
+  "currency",
+  "purpose_of_trip",
 ]);
 
 export type QAKey = z.infer<typeof QAKeySchema>;
 
-export const AnswerSchema = z.record(QAKeySchema, z.string().default(""));
+// Individual field schemas for type safety
+export const DestinationsSchema = z.array(z.string()).default([]);
+export const TransportationSchema = z.array(z.string()).default([]);
+export const ThingsToDoSchema = z.array(z.string()).default([]);
+export const FoodDietarySchema = z.array(z.string()).default([]);
+
+export const PurposeOfTripSchema = z.array(z.string()).default([]);
+
+export const AnswerSchema = z.object({
+  destinations: DestinationsSchema,
+  starting_point: z.string().default(""),
+  end_point: z.string().default(""),
+  dates: z.string().default(""), // Will store date range as string for now
+  flexible_dates: z.boolean().default(false),
+  preferences: z.string().default(""), // Will store as string, can be parsed as JSON later
+  transportation: TransportationSchema,
+  things_to_do: ThingsToDoSchema,
+  food_dietary: FoodDietarySchema,
+  citizenship: z.string().default(""),
+  budget: z.string().default("2000"), // Default budget
+  currency: z.string().default("USD"),
+  purpose_of_trip: PurposeOfTripSchema,
+});
+
 export type Answers = z.infer<typeof AnswerSchema>;
 
 export const ItineraryTaskSchema = z.object({
@@ -76,16 +107,18 @@ export const TripStateSchema = z.object({
     .object({ date: z.string(), city: z.string() })
     .nullable()
     .optional(),
-  lastSavedAt: z.string().optional(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
 });
 
 export type TripState = z.infer<typeof TripStateSchema>;
 
 export type TripAction =
-  | { type: "SET_ANSWER"; key: QAKey; value: string }
+  | { type: "SET_ANSWER"; key: QAKey; value: string | string[] | boolean }
   | { type: "SET_PROPOSED_ITINERARY"; value: ProposedItinerary | null }
   | { type: "APPROVE_ITINERARY" }
   | { type: "ADVANCE_QUESTION" }
+  | { type: "GO_BACK_QUESTION" }
   | { type: "SET_GENERAL_TASKS"; value: ItineraryTask[] }
   | { type: "TOGGLE_GENERAL_TASK"; id: string }
   | { type: "TOGGLE_DESTINATION_TASK"; city: string; id: string }
@@ -101,11 +134,19 @@ export type TripAction =
   | { type: "RESET" };
 
 export const CORE_QUESTIONS: { id: QAKey; question: string }[] = [
-  { id: "dates", question: "When are you traveling?" },
-  { id: "destinations", question: "Which destinations are on your list?" },
-  { id: "preferences", question: "Describe your travel style and must-do experiences." },
-  { id: "budget", question: "What budget range are you working with?" },
-  { id: "citizenship", question: "What passport will you use for this trip?" },
+  { id: "destinations", question: "Which destinations would you like to visit?" },
+  { id: "starting_point", question: "Where will you be starting your trip from?" },
+  { id: "end_point", question: "Where would you like to end your trip?" },
+  { id: "dates", question: "When are you planning to travel?" },
+  { id: "flexible_dates", question: "Are you flexible with your travel dates?" },
+  { id: "preferences", question: "Describe your travel style and preferences." },
+  { id: "transportation", question: "What modes of transportation do you prefer?" },
+  { id: "things_to_do", question: "What activities or attractions interest you most?" },
+  { id: "food_dietary", question: "Do you have any dietary restrictions or food preferences?" },
+  { id: "citizenship", question: "What is your citizenship/nationality?" },
+  { id: "currency", question: "What currency would you like to use for budgeting?" },
+  { id: "budget", question: "What is your approximate budget for this trip?" },
+  { id: "purpose_of_trip", question: "What is the main purpose of your trip?" },
 ];
 
 export const DEFAULT_GENERAL_TASKS: ItineraryTask[] = [
@@ -118,11 +159,19 @@ export const DEFAULT_GENERAL_TASKS: ItineraryTask[] = [
 export const createInitialTripState = (): TripState =>
   TripStateSchema.parse({
     answers: AnswerSchema.parse({
+      destinations: [],
+      starting_point: "",
+      end_point: "",
       dates: "",
-      destinations: "",
+      flexible_dates: false,
       preferences: "",
-      budget: "",
+      transportation: [],
+      things_to_do: [],
+      food_dietary: [],
       citizenship: "",
+      budget: "2000",
+      currency: "USD",
+      purpose_of_trip: [],
     }),
     answeredKeys: [],
     questionIndex: 0,
@@ -134,5 +183,6 @@ export const createInitialTripState = (): TripState =>
     pendingMessage: undefined,
     activeModal: null,
     calendarSelection: null,
-    lastSavedAt: undefined,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   });
