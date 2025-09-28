@@ -64,8 +64,8 @@ export const ItineraryItemSchema = z.object({
   timeStart: z.string(),
   timeEnd: z.string(),
   title: z.string(),
-  note: z.string().optional(),
-  tasks: z.array(z.string()).optional(),
+  note: z.string().optional().default(""),
+  tasks: z.array(z.string()).optional().default([]),
 });
 export type ItineraryItem = z.infer<typeof ItineraryItemSchema>;
 
@@ -79,8 +79,8 @@ export type ItineraryDay = z.infer<typeof ItineraryDaySchema>;
 
 export const ProposedItinerarySchema = z.object({
   days: z.array(ItineraryDaySchema),
-  generatedAt: z.string(),
-  summary: z.string(),
+  generatedAt: z.string().optional().default(() => new Date().toISOString()),
+  summary: z.string().optional().default("AI-generated travel itinerary"),
 });
 export type ProposedItinerary = z.infer<typeof ProposedItinerarySchema>;
 
@@ -184,8 +184,8 @@ export const transformAnswersToDatabase = (answers: Answers): CreateTrip => {
 // Utility function to create a complete trip from answers, itinerary, and tasks
 export const createTripFromComponents = (
   answers: Answers,
-  itinerary: ProposedItinerary,
-  tasks: Tasks
+  itinerary: ProposedItinerary | null,
+  tasks: Tasks | null
 ): CreateTrip => {
   // Parse dates string into start_date and end_date
   const parseDateRange = (dateString: string) => {

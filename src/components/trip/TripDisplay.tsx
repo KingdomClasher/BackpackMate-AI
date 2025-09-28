@@ -81,10 +81,15 @@ export function TripDisplay({ tripId }: TripDisplayProps) {
     );
   }
 
-  const tabs: { id: TabType; label: string; icon: string }[] = [
+  // Check if content is still being generated
+  const isItineraryGenerating = !tripData.proposedItinerary;
+  const isTasksGenerating = !tripData.tasks;
+  const isContentGenerating = isItineraryGenerating || isTasksGenerating;
+
+  const tabs: { id: TabType; label: string; icon: string; isGenerating?: boolean }[] = [
     { id: "overview", label: "Overview", icon: "📋" },
-    { id: "itinerary", label: "Itinerary", icon: "🗓️" },
-    { id: "tasks", label: "Tasks", icon: "✅" },
+    { id: "itinerary", label: "Itinerary", icon: "🗓️", isGenerating: isItineraryGenerating },
+    { id: "tasks", label: "Tasks", icon: "✅", isGenerating: isTasksGenerating },
   ];
 
   return (
@@ -94,14 +99,22 @@ export function TripDisplay({ tripId }: TripDisplayProps) {
         <h1 className="mb-2 text-3xl font-bold text-slate-900">
           {tripData.answers.destinations.join(", ") || "Your Trip"}
         </h1>
-        <p className="text-slate-600">
-          {tripData.answers.dates && (
-            <span className="mr-4">📅 {tripData.answers.dates}</span>
+        <div className="flex items-center gap-4">
+          <p className="text-slate-600">
+            {tripData.answers.dates && (
+              <span className="mr-4">📅 {tripData.answers.dates}</span>
+            )}
+            {tripData.answers.budget && tripData.answers.currency && (
+              <span>💰 {tripData.answers.currency} {tripData.answers.budget}</span>
+            )}
+          </p>
+          {isContentGenerating && (
+            <div className="flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-sm text-blue-700">
+              <div className="h-3 w-3 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600"></div>
+              <span>AI generating content...</span>
+            </div>
           )}
-          {tripData.answers.budget && tripData.answers.currency && (
-            <span>💰 {tripData.answers.currency} {tripData.answers.budget}</span>
-          )}
-        </p>
+        </div>
       </div>
 
       {/* Tab Navigation */}
@@ -119,6 +132,9 @@ export function TripDisplay({ tripId }: TripDisplayProps) {
               >
                 <span>{tab.icon}</span>
                 {tab.label}
+                {tab.isGenerating && (
+                  <div className="h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600"></div>
+                )}
               </button>
             ))}
           </nav>
@@ -127,12 +143,19 @@ export function TripDisplay({ tripId }: TripDisplayProps) {
 
       {/* Tab Content */}
       <div className="min-h-[400px]">
-        {activeTab === "overview" && <BasicInfoTab tripData={tripData} />}
+        {activeTab === "overview" && (
+          <BasicInfoTab
+            tripData={tripData}
+            tripId={tripId}
+            onUpdate={refetch}
+          />
+        )}
         {activeTab === "itinerary" && <ItineraryTabContent tripData={tripData} />}
         {activeTab === "tasks" && (
           <TasksTabContent
             tripData={tripData}
             tripId={tripId}
+            onTaskUpdate={refetch}
           />
         )}
       </div>

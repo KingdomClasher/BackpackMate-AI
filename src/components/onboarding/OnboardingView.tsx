@@ -15,7 +15,7 @@ import { FlexibleDatesPicker } from "@/components/onboarding/inputs/FlexibleDate
 
 
 const buildApiUrl = (path: string) => {
-  const base = process.env.NEXT_PUBLIC_MASTRA_URL ?? "http://localhost:4112";
+  const base = process.env.NEXT_PUBLIC_MASTRA_URL ?? "http://localhost:4125";
   const normalizedBase = base.endsWith("/") ? base.slice(0, -1) : base;
   return `${normalizedBase}${path}`;
 };

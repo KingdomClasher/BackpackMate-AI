@@ -12,12 +12,12 @@ interface BackendTripData {
   flexible_dates: boolean;
   preferences: Record<string, unknown>;
   transportation?: string[] | null;
-  things_to_do?: Record<string, unknown> | null;
+  things_to_do?: string[] | Record<string, unknown> | null;
   food_dietary?: string[] | null;
   citizenship: string;
   budget: number;
   currency?: string | null;
-  purpose_of_trip?: string | null;
+  purpose_of_trip?: string[] | string | null;
   itinerary?: Record<string, unknown> | null;
   tasks?: Record<string, unknown> | null;
   created_at: string;
@@ -45,7 +45,23 @@ function transformBackendToFrontend(backendData: BackendTripData): TripState {
     citizenship: backendData.citizenship || "",
     budget: backendData.budget?.toString() || "0",
     currency: backendData.currency || "USD",
-    purpose_of_trip: backendData.purpose_of_trip ? [backendData.purpose_of_trip] : [],
+    purpose_of_trip: (() => {
+      if (!backendData.purpose_of_trip) return [];
+      if (Array.isArray(backendData.purpose_of_trip)) return backendData.purpose_of_trip;
+      if (typeof backendData.purpose_of_trip === 'string') {
+        // Try to parse as JSON if it looks like JSON
+        if (backendData.purpose_of_trip.startsWith('[') && backendData.purpose_of_trip.endsWith(']')) {
+          try {
+            const parsed = JSON.parse(backendData.purpose_of_trip);
+            return Array.isArray(parsed) ? parsed : [backendData.purpose_of_trip];
+          } catch {
+            return [backendData.purpose_of_trip];
+          }
+        }
+        return [backendData.purpose_of_trip];
+      }
+      return [];
+    })(),
   };
 
   // Transform itinerary if it exists
@@ -100,7 +116,7 @@ export interface UpdateTaskResponse {
  */
 export async function fetchTripById(id: string): Promise<TripApiResponse> {
   try {
-    const backendUrl = process.env.NEXT_PUBLIC_PUBLIC_URL || 'http://localhost:4112';
+    const backendUrl = process.env.NEXT_PUBLIC_PUBLIC_URL || 'http://localhost:4125';
     const response = await fetch(`${backendUrl}/trips/${id}`, {
       method: 'GET',
       headers: {
@@ -156,6 +172,7 @@ interface UseTripDataReturn {
 
 /**
  * Hook for fetching trip data with loading and error states
+ * Includes automatic polling when itinerary or tasks are missing
  */
 export function useTripData(id: string | null): UseTripDataReturn {
   const [data, setData] = React.useState<TripState | null>(null);
@@ -163,7 +180,7 @@ export function useTripData(id: string | null): UseTripDataReturn {
   const [error, setError] = React.useState<string | null>(null);
   const [statusCode, setStatusCode] = React.useState<number | null>(null);
 
-  React.useEffect(() => {
+  const fetchData = React.useCallback(async (showLoading = true) => {
     if (!id) {
       setData(null);
       setError(null);
@@ -171,46 +188,57 @@ export function useTripData(id: string | null): UseTripDataReturn {
       return;
     }
 
-    setLoading(true);
+    if (showLoading) {
+      setLoading(true);
+    }
     setError(null);
 
-    fetchTripById(id)
-      .then((response) => {
-        if (response.success && response.data) {
-          setData(response.data);
-        } else {
-          setError(response.error || 'Failed to fetch trip');
-        }
-      })
-      .catch((err) => {
-        setError(err.message || 'Failed to fetch trip');
-      })
-      .finally(() => {
+    try {
+      const response = await fetchTripById(id);
+      if (response.success && response.data) {
+        setData(response.data);
+      } else {
+        setError(response.error || 'Failed to fetch trip');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch trip');
+    } finally {
+      if (showLoading) {
         setLoading(false);
-      });
-  }, [id]);
-
-  const refetch = React.useCallback(() => {
-    if (id) {
-      setLoading(true);
-      setError(null);
-
-      fetchTripById(id)
-        .then((response) => {
-          if (response.success && response.data) {
-            setData(response.data);
-          } else {
-            setError(response.error || 'Failed to fetch trip');
-          }
-        })
-        .catch((err) => {
-          setError(err.message || 'Failed to fetch trip');
-        })
-        .finally(() => {
-          setLoading(false);
-        });
+      }
     }
   }, [id]);
+
+  // Check if content is still being generated
+  const isContentGenerating = React.useMemo(() => {
+    if (!data) return false;
+    return !data.proposedItinerary || !data.tasks;
+  }, [data]);
+
+  // Initial fetch
+  React.useEffect(() => {
+    fetchData(true);
+  }, [fetchData]);
+
+  // Polling effect - poll every 5 seconds if content is still generating
+  React.useEffect(() => {
+    if (!isContentGenerating) return;
+
+    console.log('Content still generating, starting polling...');
+    const interval = setInterval(() => {
+      console.log('Polling for trip updates...');
+      fetchData(false); // Don't show loading spinner for polling
+    }, 5000);
+
+    return () => {
+      console.log('Stopping polling');
+      clearInterval(interval);
+    };
+  }, [isContentGenerating, fetchData]);
+
+  const refetch = React.useCallback(() => {
+    fetchData(true);
+  }, [fetchData]);
 
   return {
     data,
@@ -230,7 +258,7 @@ export async function updateTaskCompletion(
   done: boolean
 ): Promise<UpdateTaskResponse> {
   try {
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4112';
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4125';
     const response = await fetch(`${backendUrl}/trips/${tripId}/tasks/${taskId}`, {
       method: 'PATCH',
       headers: {
@@ -250,6 +278,93 @@ export async function updateTaskCompletion(
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to update task completion',
+    };
+  }
+}
+
+/**
+ * Regenerates tasks for a trip using AI
+ */
+export async function regenerateTasks(tripId: string): Promise<UpdateTaskResponse> {
+  try {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4125';
+    const response = await fetch(`${backendUrl}/trips/${tripId}/tasks/regenerate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to regenerate tasks: ${response.status}`);
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error('Error regenerating tasks:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to regenerate tasks',
+    };
+  }
+}
+
+/**
+ * Updates trip details
+ */
+export async function updateTrip(tripId: string, updates: Partial<Answers>): Promise<UpdateTaskResponse> {
+  try {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4125';
+
+    // Transform frontend format to backend format
+    const backendUpdates: any = {};
+
+    if (updates.destinations) backendUpdates.destinations = updates.destinations;
+    if (updates.starting_point !== undefined) backendUpdates.starting_point = updates.starting_point;
+    if (updates.end_point !== undefined) backendUpdates.end_point = updates.end_point;
+    if (updates.dates) {
+      // Parse dates string into start_date and end_date
+      const dateRangeMatch = updates.dates.match(/(\d{4}-\d{2}-\d{2}).*?(\d{4}-\d{2}-\d{2})/);
+      if (dateRangeMatch) {
+        backendUpdates.start_date = dateRangeMatch[1];
+        backendUpdates.end_date = dateRangeMatch[2];
+      } else {
+        const singleDate = updates.dates.match(/\d{4}-\d{2}-\d{2}/)?.[0];
+        const fallbackDate = singleDate || new Date().toISOString().split('T')[0];
+        backendUpdates.start_date = fallbackDate;
+        backendUpdates.end_date = fallbackDate;
+      }
+    }
+    if (updates.flexible_dates !== undefined) backendUpdates.flexible_dates = updates.flexible_dates;
+    if (updates.preferences !== undefined) backendUpdates.preferences = updates.preferences;
+    if (updates.transportation) backendUpdates.transportation = updates.transportation;
+    if (updates.things_to_do) backendUpdates.things_to_do = updates.things_to_do;
+    if (updates.food_dietary) backendUpdates.food_dietary = updates.food_dietary;
+    if (updates.citizenship !== undefined) backendUpdates.citizenship = updates.citizenship;
+    if (updates.budget !== undefined) backendUpdates.budget = updates.budget;
+    if (updates.currency !== undefined) backendUpdates.currency = updates.currency;
+    if (updates.purpose_of_trip) backendUpdates.purpose_of_trip = updates.purpose_of_trip;
+
+    const response = await fetch(`${backendUrl}/trips/${tripId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(backendUpdates),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to update trip: ${response.status}`);
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    console.error('Error updating trip:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update trip',
     };
   }
 }

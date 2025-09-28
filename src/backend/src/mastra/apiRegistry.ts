@@ -5,17 +5,25 @@ import type { Mastra } from '@mastra/core/mastra';
 import { mastra } from './index';
 import {
   AnswerSchema,
+  Answers,
   ChatRequest,
   ChatRequestSchema,
   CreateTripSchema,
   UpdateTripSchema,
-  createTripFromComponents
+  createTripFromComponents,
+  transformAnswersToDatabase
 } from "../schemas/trip";
 import { processAssistantMessage } from "../utils/assistant";
 import { createSSEStream, streamJSONEvent } from "../utils/streamUtils";
 import { tripService } from "../services/tripService";
-import { generateIcsFromTrip } from "../utils/ics";
-
+import {
+  generateTasksFromAnswers,
+  generateAITasksFromAnswers,
+  createItineraryFromDestinations,
+  createPromptFromAnswers
+} from "./workflows/itinerary-workflow";
+import { travelAgent } from "./agents/travel-agent";
+import { ProposedItinerarySchema } from "../schemas/trip";
 
 // Request/Response schemas for trip routes
 const TripIdParamsSchema = z.object({
@@ -109,6 +117,134 @@ const normalizeChatRequest = (payload: unknown): ChatRequest => {
   throw parsed.error;
 };
 
+// Background AI generation function
+const generateContentInBackground = async (tripId: string, answers: Answers) => {
+  console.log('Starting background AI generation for trip:', tripId);
+
+  let workflowResult;
+  try {
+    console.log('Executing AI-powered itinerary workflow...');
+
+    // Generate AI content using the travel agent directly
+    try {
+      console.log('Attempting AI generation using travel agent...');
+
+      // Generate comprehensive prompt from answers
+      const prompt = createPromptFromAnswers(answers);
+      console.log('Generated prompt:', prompt.substring(0, 200) + '...');
+
+      // Generate AI response using structured output
+      const response = await travelAgent.generateVNext([
+        {
+          role: 'system',
+          content: 'You are a travel planning expert. Generate a detailed day-by-day itinerary based on the user preferences. Each day should include specific activities with descriptions, locations, and estimated costs.'
+        },
+        {
+          role: 'user',
+          content: prompt
+        }
+      ], {
+        output: ProposedItinerarySchema
+      });
+
+      const structuredItinerary = response.object;
+      console.log('AI structured itinerary generated:', structuredItinerary.days.length, 'days');
+
+      // Generate AI-powered tasks from answers
+      const tasks = await generateAITasksFromAnswers(answers, travelAgent);
+      console.log('AI tasks generated:', tasks.generalTasks.length, 'general,', tasks.destinationSpecificTasks.length, 'destination-specific');
+
+      workflowResult = {
+        structuredItinerary,
+        tasks,
+        aiResponse: 'AI-generated structured itinerary',
+      };
+      console.log('AI generation completed successfully');
+    } catch (aiError) {
+      console.warn('AI workflow execution failed, falling back to structured generation:', aiError);
+
+      // Fallback to structured generation if AI fails
+      console.log('Using structured fallback generation...');
+      const structuredItinerary = createItineraryFromDestinations(answers.destinations);
+      // Try AI task generation even if itinerary generation failed
+      let tasks;
+      try {
+        tasks = await generateAITasksFromAnswers(answers, travelAgent);
+        console.log('AI tasks generated in fallback:', tasks.generalTasks.length, 'general,', tasks.destinationSpecificTasks.length, 'destination-specific');
+      } catch (taskError) {
+        console.warn('AI task generation failed in fallback, using rule-based tasks:', taskError);
+        tasks = generateTasksFromAnswers(answers);
+      }
+
+      workflowResult = {
+        structuredItinerary,
+        tasks,
+      };
+      console.log('Structured fallback generation completed');
+    }
+  } catch (workflowError) {
+    console.error('Workflow execution failed:', workflowError);
+
+    // Fallback to basic itinerary and tasks if AI generation fails
+    console.log('Using fallback itinerary and tasks');
+    // Try AI task generation as last resort
+    let fallbackTasks;
+    try {
+      fallbackTasks = await generateAITasksFromAnswers(answers, travelAgent);
+      console.log('AI tasks generated in final fallback:', fallbackTasks.generalTasks.length, 'general,', fallbackTasks.destinationSpecificTasks.length, 'destination-specific');
+    } catch (finalTaskError) {
+      console.warn('Final AI task generation failed, using rule-based tasks:', finalTaskError);
+      fallbackTasks = generateTasksFromAnswers(answers);
+    }
+
+    workflowResult = {
+      structuredItinerary: createItineraryFromDestinations(answers.destinations),
+      tasks: fallbackTasks,
+    };
+  }
+
+  // Update the trip with generated content
+  try {
+    await tripService.updateTrip(tripId, {
+      itinerary: workflowResult.structuredItinerary,
+      tasks: workflowResult.tasks,
+    });
+    console.log('Trip updated with AI-generated content:', tripId);
+  } catch (updateError) {
+    console.error('Failed to update trip with generated content:', tripId, updateError);
+  }
+};
+
+// Test route for AI agent
+const testAIRoute = registerApiRoute("/test-ai", {
+  method: "POST",
+  handler: async (context) => {
+    try {
+      console.log('Testing AI agent...');
+
+      const response = await travelAgent.generate([
+        {
+          role: 'user',
+          content: 'Say hello and tell me you are working properly.'
+        }
+      ]);
+
+      console.log('AI response:', response.text);
+
+      return context.json({
+        success: true,
+        message: response.text,
+      });
+    } catch (error) {
+      console.error('AI test error:', error);
+      return context.json({
+        success: false,
+        error: error instanceof Error ? error.message : 'AI test failed',
+      }, 500);
+    }
+  },
+});
+
 // Trip routes
 const tripRoutes = [
   // Create a new trip
@@ -145,22 +281,20 @@ const tripRoutes = [
         const body = await context.req.json();
         const answers = AnswerSchema.parse(body);
 
-        // For now, create placeholder itinerary and tasks
-        // TODO: This endpoint will be updated to generate actual itinerary and tasks
-        const placeholderItinerary = {
-          days: [],
-          generatedAt: new Date().toISOString(),
-          summary: "Placeholder itinerary - to be generated",
-        };
+        console.log('Creating trip from answers for destinations:', answers.destinations);
 
-        const placeholderTasks = {
-          generalTasks: [],
-          destinationSpecificTasks: [],
-        };
+        // Create trip immediately without AI generation
+        const tripData = transformAnswersToDatabase(
+          answers,
+        );
 
-        // Use the centralized function to create trip
-        const tripData = createTripFromComponents(answers, placeholderItinerary, placeholderTasks);
         const trip = await tripService.createTrip(tripData);
+        console.log('Trip created successfully with ID:', trip.id);
+
+        // Start AI generation in background (don't await)
+        generateContentInBackground(trip.id, answers).catch(error => {
+          console.error('Background AI generation failed for trip:', trip.id, error);
+        });
 
         // const prompt =
         //   `Plan a student-budget backpacking itinerary.\n` +
@@ -361,10 +495,75 @@ const tripRoutes = [
       }
     },
   }),
+
+  // Regenerate tasks with AI for an existing trip
+  registerApiRoute("/trips/:id/tasks/regenerate", {
+    method: "POST",
+    handler: async (context) => {
+      try {
+        const { id } = TripIdParamsSchema.parse({ id: context.req.param('id') });
+
+        // Get the current trip
+        const trip = await tripService.getTripById(id);
+        if (!trip) {
+          return context.json({
+            success: false,
+            error: "Trip not found",
+          }, 404);
+        }
+
+        console.log('Regenerating tasks for trip:', id);
+
+        // Create answers object from trip data for AI task generation
+        const answers = {
+          destinations: trip.destinations || [],
+          starting_point: trip.starting_point || "",
+          end_point: trip.end_point || "",
+          dates: `${trip.start_date} to ${trip.end_date}`,
+          flexible_dates: trip.flexible_dates || false,
+          preferences: trip.preferences || "",
+          transportation: trip.transportation || [],
+          things_to_do: trip.things_to_do || [],
+          food_dietary: trip.food_dietary || [],
+          citizenship: trip.citizenship || "",
+          budget: trip.budget || "2000",
+          currency: trip.currency || "USD",
+          purpose_of_trip: trip.purpose_of_trip || [],
+        };
+
+        // Generate new AI-powered tasks
+        let newTasks;
+        try {
+          newTasks = await generateAITasksFromAnswers(answers, travelAgent);
+          console.log('AI tasks regenerated:', newTasks.generalTasks.length, 'general,', newTasks.destinationSpecificTasks.length, 'destination-specific');
+        } catch (aiError) {
+          console.warn('AI task regeneration failed, using rule-based generation:', aiError);
+          newTasks = generateTasksFromAnswers(answers);
+        }
+
+        // Update the trip with new tasks
+        const updatedTrip = await tripService.updateTrip(id, { tasks: newTasks });
+
+        return context.json({
+          success: true,
+          data: updatedTrip,
+          message: "Tasks successfully regenerated with AI",
+        });
+      } catch (error) {
+        console.error("Regenerate tasks error:", error);
+        const message = error instanceof Error ? error.message : "Failed to regenerate tasks";
+        return context.json({
+          success: false,
+          error: message
+        }, 400);
+      }
+    },
+  }),
 ];
 
 // Combine all routes
 export const apiRoutes = [
   ...originalRoutes,
+  testAIRoute,
   ...tripRoutes,
 ];

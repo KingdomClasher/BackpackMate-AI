@@ -88,10 +88,15 @@ export function ItineraryTabContent({ tripData }: ItineraryTabContentProps) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
         <div className="text-center">
-          <div className="mb-4 text-6xl">📅</div>
-          <h3 className="mb-2 text-xl font-semibold text-slate-900">No Itinerary Available</h3>
+          <div className="mb-4">
+            <div className="mx-auto h-16 w-16 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600"></div>
+          </div>
+          <h3 className="mb-2 text-xl font-semibold text-slate-900">Generating Your Itinerary</h3>
           <p className="text-slate-600">
-            Your itinerary hasn&apos;t been generated yet or isn&apos;t available.
+            Our AI is creating a personalized itinerary for your trip...
+          </p>
+          <p className="mt-2 text-sm text-slate-500">
+            This usually takes 30-60 seconds
           </p>
         </div>
       </div>

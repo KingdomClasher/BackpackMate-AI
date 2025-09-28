@@ -108,11 +108,26 @@ export const LocationAutocomplete = ({
 }: LocationAutocompleteProps) => {
   const [options, setOptions] = useState<LocationOption[]>(LOCATION_DATA);
   const [selectKey, setSelectKey] = useState(0); // Force re-render key
+  const [isMounted, setIsMounted] = useState(false);
+
+  // Ensure component is mounted before rendering to avoid hydration mismatch
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   // Reset component state when placeholder changes (different question)
   useEffect(() => {
     setSelectKey(prev => prev + 1);
   }, [placeholder]);
+
+  // Don't render until mounted to avoid hydration mismatch
+  if (!isMounted) {
+    return (
+      <div className={`${className} h-14 rounded-2xl border border-slate-200 bg-white animate-pulse`}>
+        <div className="h-full w-full rounded-2xl bg-slate-100"></div>
+      </div>
+    );
+  }
 
   const selectedOptions = value.map(val =>
     options.find(opt => opt.value === val) || { value: val, label: val, type: 'city' as const }
@@ -143,6 +158,7 @@ export const LocationAutocomplete = ({
     <div className={className}>
       <Select
         key={selectKey} // Force remount when key changes
+        instanceId={`location-select-${selectKey}`} // Consistent ID for hydration
         isMulti={isMulti}
         options={options}
         value={isMulti ? selectedOptions : selectedOptions[0]}

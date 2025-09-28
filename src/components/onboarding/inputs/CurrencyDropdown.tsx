@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Select from "react-select";
 import { DollarSign } from "lucide-react";
 
@@ -82,7 +82,22 @@ export const CurrencyDropdown = ({
   placeholder = "Select currency",
   className = ""
 }: CurrencyDropdownProps) => {
+  const [isMounted, setIsMounted] = useState(false);
   const selectedOption = CURRENCIES.find(currency => currency.value === value);
+
+  // Ensure component is mounted before rendering to avoid hydration mismatch
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // Don't render until mounted to avoid hydration mismatch
+  if (!isMounted) {
+    return (
+      <div className={`${className} h-14 rounded-2xl border border-slate-200 bg-white animate-pulse`}>
+        <div className="h-full w-full rounded-2xl bg-slate-100"></div>
+      </div>
+    );
+  }
 
   const handleChange = (selectedOption: any) => {
     onChange(selectedOption ? selectedOption.value : "");
@@ -109,6 +124,7 @@ export const CurrencyDropdown = ({
   return (
     <div className={className}>
       <Select
+        instanceId="currency-select" // Consistent ID for hydration
         options={CURRENCIES}
         value={selectedOption}
         onChange={handleChange}

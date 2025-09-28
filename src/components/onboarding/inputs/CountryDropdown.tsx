@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Select from "react-select";
 import { Globe } from "lucide-react";
 
@@ -100,7 +100,22 @@ export const CountryDropdown = ({
   placeholder = "Select your country",
   className = ""
 }: CountryDropdownProps) => {
+  const [isMounted, setIsMounted] = useState(false);
   const selectedOption = COUNTRIES.find(country => country.value === value);
+
+  // Ensure component is mounted before rendering to avoid hydration mismatch
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // Don't render until mounted to avoid hydration mismatch
+  if (!isMounted) {
+    return (
+      <div className={`${className} h-14 rounded-2xl border border-slate-200 bg-white animate-pulse`}>
+        <div className="h-full w-full rounded-2xl bg-slate-100"></div>
+      </div>
+    );
+  }
 
   const handleChange = (selectedOption: any) => {
     onChange(selectedOption ? selectedOption.value : "");
@@ -116,6 +131,7 @@ export const CountryDropdown = ({
   return (
     <div className={className}>
       <Select
+        instanceId="country-select" // Consistent ID for hydration
         options={COUNTRIES}
         value={selectedOption}
         onChange={handleChange}
