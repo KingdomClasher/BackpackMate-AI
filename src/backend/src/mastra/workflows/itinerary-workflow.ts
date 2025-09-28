@@ -9,7 +9,9 @@ import {
   ItineraryDaySchema,
   ItineraryItemSchema,
   DEFAULT_GENERAL_TASKS,
-  Answers
+  Answers,
+  parseDateRangeFromAnswers,
+  ProposedItinerary,
 } from '../../schemas/trip';
 
 // Utility function to create AI prompt from user answers
@@ -339,41 +341,98 @@ const createFallbackItinerary = (markdownContent: string) => {
 };
 
 // Create itinerary from destinations array
-const createItineraryFromDestinations = (destinations: string[]) => {
+const createItineraryFromDestinations = (
+  destinations: string[],
+  answers?: Answers,
+  totalDaysOverride?: number
+) => {
+  const { start_date, end_date } = answers
+    ? parseDateRangeFromAnswers(answers.dates)
+    : { start_date: undefined, end_date: undefined };
+
+  const baseDate = start_date ? new Date(start_date) : new Date();
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const endDate = end_date ? new Date(end_date) : undefined;
+  const daySpan = endDate ? Math.max(0, Math.round((endDate.getTime() - baseDate.getTime()) / msPerDay)) : undefined;
+
+  let totalDays = totalDaysOverride ?? (daySpan !== undefined ? daySpan + 1 : destinations.length || 1);
+  totalDays = Math.max(1, totalDays);
+
   return {
-    days: destinations.map((destination, index) => ({
-      id: `day-${index + 1}`,
-      date: new Date(Date.now() + index * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      city: destination,
-      items: [
-        {
-          id: `item-${index + 1}-1`,
-          timeStart: '09:00',
-          timeEnd: '12:00',
-          title: `Morning exploration in ${destination}`,
-          note: 'Explore the city and get oriented',
-          tasks: [],
-        },
-        {
-          id: `item-${index + 1}-2`,
-          timeStart: '13:00',
-          timeEnd: '17:00',
-          title: `Afternoon activities in ${destination}`,
-          note: 'Visit main attractions',
-          tasks: [],
-        },
-        {
-          id: `item-${index + 1}-3`,
-          timeStart: '18:00',
-          timeEnd: '21:00',
-          title: `Evening dining in ${destination}`,
-          note: 'Try local cuisine',
-          tasks: [],
-        },
-      ],
-    })),
+    days: Array.from({ length: totalDays }).map((_, index) => {
+      const dayDate = new Date(baseDate.getTime() + index * msPerDay);
+      const city = destinations.length
+        ? destinations[index % destinations.length]
+        : 'Destination';
+      return {
+        id: `day-${index + 1}`,
+        date: dayDate.toISOString().split('T')[0],
+        city,
+        items: [
+          {
+            id: `item-${index + 1}-1`,
+            timeStart: '09:00',
+            timeEnd: '12:00',
+            title: `Morning exploration in ${city}`,
+            note: 'Explore the city and get oriented',
+            tasks: [],
+          },
+          {
+            id: `item-${index + 1}-2`,
+            timeStart: '13:00',
+            timeEnd: '17:00',
+            title: `Afternoon activities in ${city}`,
+            note: 'Visit main attractions',
+            tasks: [],
+          },
+          {
+            id: `item-${index + 1}-3`,
+            timeStart: '18:00',
+            timeEnd: '21:00',
+            title: `Evening dining in ${city}`,
+            note: 'Try local cuisine',
+            tasks: [],
+          },
+        ],
+      };
+    }),
     generatedAt: new Date().toISOString(),
     summary: 'Structured itinerary generated from user preferences',
+  };
+};
+
+const alignItineraryToDates = (itinerary: ProposedItinerary, answers?: Answers): ProposedItinerary => {
+  if (!answers) return itinerary;
+  const { start_date, end_date } = parseDateRangeFromAnswers(answers.dates);
+  if (!start_date) return itinerary;
+
+  const baseDate = new Date(start_date);
+  if (Number.isNaN(baseDate.getTime())) return itinerary;
+
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const desiredDays = end_date
+    ? Math.max(1, Math.round((new Date(end_date).getTime() - baseDate.getTime()) / msPerDay) + 1)
+    : itinerary.days?.length ?? 1;
+
+  let days = itinerary.days ?? [];
+  if (desiredDays && days.length !== desiredDays) {
+    if (days.length > desiredDays) {
+      days = days.slice(0, desiredDays);
+    } else {
+      const fallbackDays = createItineraryFromDestinations(answers.destinations, answers, desiredDays).days;
+      days = [...days, ...fallbackDays.slice(days.length, desiredDays)];
+    }
+  }
+
+  return {
+    ...itinerary,
+    days: days.map((day, index) => {
+      const normalizedDate = new Date(baseDate.getTime() + index * msPerDay);
+      return {
+        ...day,
+        date: normalizedDate.toISOString().split('T')[0],
+      };
+    }),
   };
 };
 
@@ -422,6 +481,7 @@ const planItinerary = createStep({
 
     // Parse the response to extract structured itinerary
     let structuredItinerary = parseItineraryResponse(text);
+    structuredItinerary = alignItineraryToDates(structuredItinerary, inputData.answers);
 
     // Ensure required fields are present
     if (!structuredItinerary.generatedAt) {

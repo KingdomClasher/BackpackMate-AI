@@ -5,9 +5,7 @@ import {
   UpdateTrip,
   CreateTripSchema,
   UpdateTripSchema,
-  ProposedItinerary,
-  DestinationTasks,
-  ItineraryTask
+  ProposedItinerary
 } from '../schemas/trip';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -19,9 +17,33 @@ export class TripService {
     // Validate input data
     const validatedData = CreateTripSchema.parse(tripData);
 
+    // Parse preferences from string to object if needed
+    const preferences = (() => {
+      if (typeof validatedData.preferences !== 'string') return validatedData.preferences;
+      if (!validatedData.preferences) return {};
+      try {
+        return JSON.parse(validatedData.preferences);
+      } catch {
+        return validatedData.preferences;
+      }
+    })();
+
+    // Convert budget from string to number
+    const budget = typeof validatedData.budget === 'string'
+      ? parseFloat(validatedData.budget)
+      : validatedData.budget;
+
+    // Convert purpose_of_trip from array to string if needed
+    const purpose_of_trip = Array.isArray(validatedData.purpose_of_trip)
+      ? validatedData.purpose_of_trip.join(', ')
+      : validatedData.purpose_of_trip;
+
     const tripToInsert: Database['public']['Tables']['trip']['Insert'] = {
       id: uuidv4(),
       ...validatedData,
+      preferences,
+      budget,
+      purpose_of_trip,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -67,8 +89,37 @@ export class TripService {
     // Validate input data
     const validatedUpdates = UpdateTripSchema.parse(updates);
 
+    // Parse preferences from string to object if needed
+    const preferences = (() => {
+      if (!validatedUpdates.preferences || typeof validatedUpdates.preferences !== 'string') {
+        return validatedUpdates.preferences;
+      }
+      try {
+        return JSON.parse(validatedUpdates.preferences);
+      } catch {
+        return validatedUpdates.preferences;
+      }
+    })();
+
+    // Convert budget from string to number if provided
+    const budget = validatedUpdates.budget
+      ? (typeof validatedUpdates.budget === 'string'
+        ? parseFloat(validatedUpdates.budget)
+        : validatedUpdates.budget)
+      : undefined;
+
+    // Convert purpose_of_trip from array to string if needed
+    const purpose_of_trip = validatedUpdates.purpose_of_trip !== undefined
+      ? (Array.isArray(validatedUpdates.purpose_of_trip)
+        ? validatedUpdates.purpose_of_trip.join(', ')
+        : validatedUpdates.purpose_of_trip)
+      : undefined;
+
     const updateData: Database['public']['Tables']['trip']['Update'] = {
       ...validatedUpdates,
+      preferences,
+      budget,
+      purpose_of_trip,
       updated_at: new Date().toISOString(),
     };
 
@@ -84,6 +135,23 @@ export class TripService {
     }
 
     return data as TripDatabase;
+  }
+
+  /**
+   * Get all trips (for fallback purposes)
+   */
+  async getAllTrips(): Promise<TripDatabase[]> {
+    const { data, error } = await supabase
+      .from('trip')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(10); // Limit to most recent 10 trips
+
+    if (error) {
+      throw new Error(`Failed to get trips: ${error.message}`);
+    }
+
+    return data as TripDatabase[];
   }
 
   /**

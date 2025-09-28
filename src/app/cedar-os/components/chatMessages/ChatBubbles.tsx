@@ -54,7 +54,7 @@ export const ChatBubbles: React.FC<ChatBubblesProps> = ({
 		<div
 			ref={containerRef}
 			className={cn(
-				'w-full h-full mb-0 flex flex-col space-y-1 pb-3 relative',
+				'w-full h-full mb-0 flex flex-col space-y-1 pb-3 relative cedar-chat-messages',
 				containerClasses
 			)}
 			style={{
@@ -82,7 +82,7 @@ export const ChatBubbles: React.FC<ChatBubblesProps> = ({
 								duration: 0.15,
 								ease: 'easeOut',
 							}}
-							className={`flex ${
+							className={`flex cedar-chat-message ${
 								message.role === 'user' ? 'justify-end' : 'justify-start'
 							} ${isConsecutiveMessage(index) ? 'mt-1' : 'mt-2'}`}>
 							<ChatRenderer message={message} />

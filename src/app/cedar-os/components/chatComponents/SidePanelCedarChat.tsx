@@ -69,22 +69,22 @@ export const SidePanelCedarChat: React.FC<SidePanelCedarChatProps> = ({
 				dimensions={dimensions}
 				resizable={resizable}
 				topOffset={topOffset}
-				panelClassName={`dark:bg-gray-900 ${className}`}
+				panelClassName={`dark:bg-gray-900 cedar-os ${className}`}
 				panelContent={
-					<Container3D className='flex flex-col h-full'>
+					<Container3D className='flex flex-col h-full cedar-chat'>
 						{/* Header */}
-						<div className='flex-shrink-0 z-20 flex flex-row items-center justify-between px-4 py-2 min-w-0 border-b border-gray-200 dark:border-gray-700'>
+						<div className='flex-shrink-0 z-20 flex flex-row items-center justify-between px-4 py-2 min-w-0 border-b border-slate-200 dark:border-gray-700'>
 							<div className='flex items-center min-w-0 flex-1'>
 								{companyLogo && (
 									<div className='flex-shrink-0 w-6 h-6 mr-2'>
 										{companyLogo}
 									</div>
 								)}
-								<span className='font-bold text-lg truncate'>{title}</span>
+								<span className='font-semibold text-lg truncate text-slate-900 dark:text-gray-100'>{title}</span>
 							</div>
 							<div className='flex items-center gap-2 flex-shrink-0'>
 								<button
-									className='p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors'
+									className='p-1.5 hover:bg-slate-100 dark:hover:bg-gray-800 rounded-md transition-colors text-slate-600 hover:text-slate-900'
 									onClick={() => setShowChat(false)}
 									aria-label='Close chat'>
 									<X className='h-4 w-4' strokeWidth={2.5} />

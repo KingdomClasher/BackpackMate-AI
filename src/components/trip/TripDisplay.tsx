@@ -5,6 +5,8 @@ import { useTripData } from "@/lib/api/trip";
 import { BasicInfoTab } from "@/components/trip/BasicInfoTab";
 import { ItineraryTabContent } from "@/components/trip/ItineraryTabContent";
 import { TasksTabContent } from "@/components/trip/TasksTabContent";
+import { SidePanelCedarChat } from "@/app/cedar-os/components/chatComponents/SidePanelCedarChat";
+import { TripChatProvider } from "@/components/providers/TripChatProvider";
 
 interface TripDisplayProps {
   tripId: string;
@@ -93,72 +95,86 @@ export function TripDisplay({ tripId }: TripDisplayProps) {
   ];
 
   return (
-    <div className="mx-auto max-w-6xl p-6">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="mb-2 text-3xl font-bold text-slate-900">
-          {tripData.answers.destinations.join(", ") || "Your Trip"}
-        </h1>
-        <div className="flex items-center gap-4">
-          <p className="text-slate-600">
-            {tripData.answers.dates && (
-              <span className="mr-4">📅 {tripData.answers.dates}</span>
-            )}
-            {tripData.answers.budget && tripData.answers.currency && (
-              <span>💰 {tripData.answers.currency} {tripData.answers.budget}</span>
-            )}
-          </p>
-          {isContentGenerating && (
-            <div className="flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-sm text-blue-700">
-              <div className="h-3 w-3 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600"></div>
-              <span>AI generating content...</span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Tab Navigation */}
-      <div className="mb-6">
-        <div className="border-b border-slate-200">
-          <nav className="-mb-px flex space-x-8">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 border-b-2 px-1 py-4 text-sm font-medium transition-colors ${activeTab === tab.id
-                  ? "border-slate-900 text-slate-900"
-                  : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700"
-                  }`}
-              >
-                <span>{tab.icon}</span>
-                {tab.label}
-                {tab.isGenerating && (
-                  <div className="h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600"></div>
+    <TripChatProvider tripId={tripId} tripData={tripData}>
+      <SidePanelCedarChat
+        title="BackpackMate Assistant"
+        side="right"
+        companyLogo={<span className="text-lg">🎒</span>}
+        dimensions={{
+          minWidth: 400,
+        }}
+        resizable={true}
+        stream={true}
+        className="bg-white"
+      >
+        <div className="mx-auto max-w-6xl p-6">
+          {/* Header */}
+          <div className="mb-8">
+            <h1 className="mb-2 text-3xl font-bold text-slate-900">
+              {tripData.answers.destinations.join(", ") || "Your Trip"}
+            </h1>
+            <div className="flex items-center gap-4">
+              <p className="text-slate-600">
+                {tripData.answers.dates && (
+                  <span className="mr-4">📅 {tripData.answers.dates}</span>
                 )}
-              </button>
-            ))}
-          </nav>
-        </div>
-      </div>
+                {tripData.answers.budget && tripData.answers.currency && (
+                  <span>💰 {tripData.answers.currency} {tripData.answers.budget}</span>
+                )}
+              </p>
+              {isContentGenerating && (
+                <div className="flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-sm text-blue-700">
+                  <div className="h-3 w-3 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600"></div>
+                  <span>AI generating content...</span>
+                </div>
+              )}
+            </div>
+          </div>
 
-      {/* Tab Content */}
-      <div className="min-h-[400px]">
-        {activeTab === "overview" && (
-          <BasicInfoTab
-            tripData={tripData}
-            tripId={tripId}
-            onUpdate={refetch}
-          />
-        )}
-        {activeTab === "itinerary" && <ItineraryTabContent tripData={tripData} />}
-        {activeTab === "tasks" && (
-          <TasksTabContent
-            tripData={tripData}
-            tripId={tripId}
-            onTaskUpdate={refetch}
-          />
-        )}
-      </div>
-    </div>
+          {/* Tab Navigation */}
+          <div className="mb-6">
+            <div className="border-b border-slate-200">
+              <nav className="-mb-px flex space-x-8">
+                {tabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`flex items-center gap-2 border-b-2 px-1 py-4 text-sm font-medium transition-colors ${activeTab === tab.id
+                      ? "border-slate-900 text-slate-900"
+                      : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700"
+                      }`}
+                  >
+                    <span>{tab.icon}</span>
+                    {tab.label}
+                    {tab.isGenerating && (
+                      <div className="h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600"></div>
+                    )}
+                  </button>
+                ))}
+              </nav>
+            </div>
+          </div>
+
+          {/* Tab Content */}
+          <div className="min-h-[400px]">
+            {activeTab === "overview" && (
+              <BasicInfoTab
+                tripData={tripData}
+                tripId={tripId}
+                onUpdate={refetch}
+              />
+            )}
+            {activeTab === "itinerary" && <ItineraryTabContent tripData={tripData} />}
+            {activeTab === "tasks" && (
+              <TasksTabContent
+                tripData={tripData}
+                tripId={tripId}
+                onTaskUpdate={refetch}
+              />
+            )}
+          </div>
+        </div>
+      </SidePanelCedarChat>
+    </TripChatProvider>
   );
 }

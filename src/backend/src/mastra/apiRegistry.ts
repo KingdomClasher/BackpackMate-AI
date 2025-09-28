@@ -20,10 +20,12 @@ import {
   generateTasksFromAnswers,
   generateAITasksFromAnswers,
   createItineraryFromDestinations,
-  createPromptFromAnswers
+  createPromptFromAnswers,
+  itineraryWorkflow
 } from "./workflows/itinerary-workflow";
 import { travelAgent } from "./agents/travel-agent";
 import { ProposedItinerarySchema } from "../schemas/trip";
+import { regenerateTripContent, touchesBasicTripInfo } from "./utils/regenerateTripContent";
 
 // Request/Response schemas for trip routes
 const TripIdParamsSchema = z.object({
@@ -38,7 +40,62 @@ const originalRoutes = [
       try {
         const body = await context.req.json();
         const request = normalizeChatRequest(body);
-        const response = await processAssistantMessage(request.messages);
+
+        // Try to get trip ID from resourceId or from referer URL
+        let tripId = request.resourceId;
+        if (!tripId) {
+          const referer = context.req.header('referer') || context.req.header('Referer');
+          console.log('Chat request referer:', referer);
+          if (referer) {
+            // Try different UUID patterns
+            let tripIdMatch = referer.match(/\/trip\/([a-f0-9-]{36})/i);
+            if (!tripIdMatch) {
+              // Try shorter UUID pattern without hyphens
+              tripIdMatch = referer.match(/\/trip\/([a-f0-9]{32})/i);
+            }
+            if (!tripIdMatch) {
+              // Try any alphanumeric ID pattern
+              tripIdMatch = referer.match(/\/trip\/([a-zA-Z0-9-]+)/);
+            }
+            if (tripIdMatch) {
+              tripId = tripIdMatch[1];
+              console.log('Extracted tripId from referer:', tripId);
+            } else {
+              console.log('No trip ID pattern found in referer URL');
+            }
+          } else {
+            console.log('No referer header found');
+          }
+        }
+
+        // Temporary fallback: try to get the most recent trip if no tripId found
+        if (!tripId) {
+          console.log('No tripId found, attempting to get most recent trip as fallback');
+          try {
+            const allTrips = await tripService.getAllTrips();
+            if (allTrips && allTrips.length > 0) {
+              // Get the most recently created trip
+              const mostRecentTrip = allTrips.sort((a, b) =>
+                new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+              )[0];
+              tripId = mostRecentTrip.id;
+              console.log('Using most recent trip as fallback:', tripId);
+            }
+          } catch (error) {
+            console.warn('Failed to get fallback trip:', error);
+          }
+        }
+
+        const chatContext = tripId ? { tripId } : undefined;
+
+        console.log('Chat request received:', {
+          hasResourceId: !!request.resourceId,
+          resourceId: request.resourceId,
+          extractedTripId: tripId,
+          messageCount: request.messages?.length
+        });
+
+        const response = await processAssistantMessage(request.messages, chatContext);
         return context.json(response);
       } catch (error) {
         console.error("Chat handler error", error);
@@ -54,6 +111,61 @@ const originalRoutes = [
       try {
         const body = await context.req.json();
         const request = normalizeChatRequest(body);
+
+        // Try to get trip ID from resourceId or from referer URL
+        let tripId = request.resourceId;
+        if (!tripId) {
+          const referer = context.req.header('referer') || context.req.header('Referer');
+          console.log('Chat stream request referer:', referer);
+          if (referer) {
+            // Try different UUID patterns
+            let tripIdMatch = referer.match(/\/trip\/([a-f0-9-]{36})/i);
+            if (!tripIdMatch) {
+              // Try shorter UUID pattern without hyphens
+              tripIdMatch = referer.match(/\/trip\/([a-f0-9]{32})/i);
+            }
+            if (!tripIdMatch) {
+              // Try any alphanumeric ID pattern
+              tripIdMatch = referer.match(/\/trip\/([a-zA-Z0-9-]+)/);
+            }
+            if (tripIdMatch) {
+              tripId = tripIdMatch[1];
+              console.log('Extracted tripId from referer:', tripId);
+            } else {
+              console.log('No trip ID pattern found in referer URL');
+            }
+          } else {
+            console.log('No referer header found');
+          }
+        }
+
+        // Temporary fallback: try to get the most recent trip if no tripId found
+        if (!tripId) {
+          console.log('No tripId found, attempting to get most recent trip as fallback');
+          try {
+            const allTrips = await tripService.getAllTrips();
+            if (allTrips && allTrips.length > 0) {
+              // Get the most recently created trip
+              const mostRecentTrip = allTrips.sort((a, b) =>
+                new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+              )[0];
+              tripId = mostRecentTrip.id;
+              console.log('Using most recent trip as fallback:', tripId);
+            }
+          } catch (error) {
+            console.warn('Failed to get fallback trip:', error);
+          }
+        }
+
+        const chatContext = tripId ? { tripId } : undefined;
+
+        console.log('Chat stream request received:', {
+          hasResourceId: !!request.resourceId,
+          resourceId: request.resourceId,
+          extractedTripId: tripId,
+          messageCount: request.messages?.length
+        });
+
         return createSSEStream(async (controller) => {
           streamJSONEvent(controller, {
             type: "progress_update",
@@ -61,7 +173,7 @@ const originalRoutes = [
             state: "in_progress",
           });
 
-          const response = await processAssistantMessage(request.messages);
+          const response = await processAssistantMessage(request.messages, chatContext);
 
           const encoder = new TextEncoder();
           const escaped = response.content.replace(/\n/g, "\\n");
@@ -165,7 +277,7 @@ const generateContentInBackground = async (tripId: string, answers: Answers) => 
 
       // Fallback to structured generation if AI fails
       console.log('Using structured fallback generation...');
-      const structuredItinerary = createItineraryFromDestinations(answers.destinations);
+      const structuredItinerary = createItineraryFromDestinations(answers.destinations, answers);
       // Try AI task generation even if itinerary generation failed
       let tasks;
       try {
@@ -198,7 +310,7 @@ const generateContentInBackground = async (tripId: string, answers: Answers) => 
     }
 
     workflowResult = {
-      structuredItinerary: createItineraryFromDestinations(answers.destinations),
+      structuredItinerary: createItineraryFromDestinations(answers.destinations, answers),
       tasks: fallbackTasks,
     };
   }
@@ -397,13 +509,41 @@ const tripRoutes = [
         const { id } = TripIdParamsSchema.parse({ id: context.req.param('id') });
         const body = await context.req.json();
         const updates = UpdateTripSchema.parse(body);
+        const needsRegeneration = touchesBasicTripInfo(updates);
 
         const trip = await tripService.updateTrip(id, updates);
 
-        return context.json({
-          success: true,
-          data: trip,
-        });
+        if (!needsRegeneration) {
+          return context.json({
+            success: true,
+            data: trip,
+            regenerated: false,
+            message: "Trip updated successfully",
+          });
+        }
+
+        try {
+          const regeneratedTrip = await regenerateTripContent(id, trip);
+          return context.json({
+            success: true,
+            data: regeneratedTrip,
+            regenerated: true,
+            message: "Trip updated and itinerary/tasks regenerated",
+          });
+        } catch (regenError) {
+          console.error("Regeneration after update failed:", regenError);
+          const message =
+            regenError instanceof Error
+              ? regenError.message
+              : "Failed to regenerate itinerary and tasks after update";
+          return context.json(
+            {
+              success: false,
+              error: message,
+            },
+            500
+          );
+        }
       } catch (error) {
         console.error("Update trip error:", error);
         const message = error instanceof Error ? error.message : "Failed to update trip";
@@ -556,6 +696,91 @@ const tripRoutes = [
           success: false,
           error: message
         }, 400);
+      }
+    },
+  }),
+
+  // Regenerate both itinerary and tasks
+  registerApiRoute("/trips/:id/regenerate", {
+    method: "POST",
+    handler: async (context) => {
+      try {
+        const { id } = TripIdParamsSchema.parse({ id: context.req.param('id') });
+
+        // Get the current trip
+        const trip = await tripService.getTripById(id);
+        if (!trip) {
+          return context.json({
+            success: false,
+            error: "Trip not found",
+          }, 404);
+        }
+
+        console.log('Regenerating itinerary and tasks for trip:', id);
+
+        // Create answers object from trip data for AI generation
+        const answers = {
+          destinations: trip.destinations || [],
+          starting_point: trip.starting_point || "",
+          end_point: trip.end_point || "",
+          dates: `${trip.start_date} to ${trip.end_date}`,
+          flexible_dates: trip.flexible_dates || false,
+          preferences: JSON.stringify(trip.preferences || {}),
+          transportation: trip.transportation || [],
+          things_to_do: Array.isArray(trip.things_to_do) ? trip.things_to_do : Object.values(trip.things_to_do || {}).map(String),
+          food_dietary: trip.food_dietary || [],
+          citizenship: trip.citizenship,
+          budget: trip.budget.toString(),
+          currency: trip.currency || 'USD',
+          purpose_of_trip: Array.isArray(trip.purpose_of_trip) ? trip.purpose_of_trip : [trip.purpose_of_trip || ''].filter(Boolean),
+        };
+
+        // Generate AI content using the travel agent directly (same as generateContentInBackground)
+        console.log('Attempting AI generation using travel agent...');
+
+        // Generate comprehensive prompt from answers
+        const prompt = createPromptFromAnswers(answers);
+        console.log('Generated prompt:', prompt.substring(0, 200) + '...');
+
+        // Generate AI response using structured output
+        const response = await travelAgent.generateVNext([
+          {
+            role: 'system',
+            content: 'You are a travel planning expert. Generate a detailed day-by-day itinerary based on the user preferences. Each day should include specific activities with descriptions, locations, and estimated costs.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ], {
+          output: ProposedItinerarySchema
+        });
+
+        const structuredItinerary = response.object;
+        console.log('AI structured itinerary generated:', structuredItinerary.days.length, 'days');
+
+        // Generate AI-powered tasks from answers
+        const tasks = await generateAITasksFromAnswers(answers, travelAgent);
+        console.log('AI tasks generated:', tasks.generalTasks.length, 'general,', tasks.destinationSpecificTasks.length, 'destination-specific');
+
+        // Update the trip with new itinerary and tasks
+        const updatedTrip = await tripService.updateTrip(id, {
+          itinerary: structuredItinerary,
+          tasks: tasks,
+        });
+
+        return context.json({
+          success: true,
+          data: updatedTrip,
+          message: "Trip itinerary and tasks successfully regenerated with AI",
+        });
+      } catch (error) {
+        console.error("Full regeneration error:", error);
+        const message = error instanceof Error ? error.message : "Failed to regenerate trip content";
+        return context.json({
+          success: false,
+          error: message
+        }, 500);
       }
     },
   }),

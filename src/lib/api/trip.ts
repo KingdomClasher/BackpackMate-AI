@@ -99,16 +99,44 @@ function transformBackendToFrontend(backendData: BackendTripData): TripState {
   };
 }
 
+function parseDateInput(value: string | undefined | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    const isoMatch = value.match(/\d{4}-\d{2}-\d{2}/)?.[0];
+    if (!isoMatch) return null;
+    return isoMatch;
+  }
+  return date.toISOString().split('T')[0];
+}
+
+function parseDateRange(value: string): { start?: string; end?: string } {
+  const parts = value.split(/\s+to\s+/i).map((part) => part.trim()).filter(Boolean);
+  if (parts.length === 0) {
+    return {};
+  }
+
+  const start = parseDateInput(parts[0]);
+  const end = parts.length > 1 ? parseDateInput(parts[1]) : start;
+
+  const result: { start?: string; end?: string } = {};
+  if (start) result.start = start;
+  if (end) result.end = end;
+  return result;
+}
+
 export interface TripApiResponse {
   success: boolean;
   data?: TripState;
   error?: string;
 }
 
-export interface UpdateTaskResponse {
+export interface TripMutationResponse {
   success: boolean;
   data?: any;
   error?: string;
+  message?: string;
+  regenerated?: boolean;
 }
 
 /**
@@ -256,7 +284,7 @@ export async function updateTaskCompletion(
   tripId: string,
   taskId: string,
   done: boolean
-): Promise<UpdateTaskResponse> {
+): Promise<TripMutationResponse> {
   try {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4125';
     const response = await fetch(`${backendUrl}/trips/${tripId}/tasks/${taskId}`, {
@@ -285,7 +313,7 @@ export async function updateTaskCompletion(
 /**
  * Regenerates tasks for a trip using AI
  */
-export async function regenerateTasks(tripId: string): Promise<UpdateTaskResponse> {
+export async function regenerateTasks(tripId: string): Promise<TripMutationResponse> {
   try {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4125';
     const response = await fetch(`${backendUrl}/trips/${tripId}/tasks/regenerate`, {
@@ -313,7 +341,7 @@ export async function regenerateTasks(tripId: string): Promise<UpdateTaskRespons
 /**
  * Updates trip details
  */
-export async function updateTrip(tripId: string, updates: Partial<Answers>): Promise<UpdateTaskResponse> {
+export async function updateTrip(tripId: string, updates: Partial<Answers>): Promise<TripMutationResponse> {
   try {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4125';
 
@@ -324,17 +352,9 @@ export async function updateTrip(tripId: string, updates: Partial<Answers>): Pro
     if (updates.starting_point !== undefined) backendUpdates.starting_point = updates.starting_point;
     if (updates.end_point !== undefined) backendUpdates.end_point = updates.end_point;
     if (updates.dates) {
-      // Parse dates string into start_date and end_date
-      const dateRangeMatch = updates.dates.match(/(\d{4}-\d{2}-\d{2}).*?(\d{4}-\d{2}-\d{2})/);
-      if (dateRangeMatch) {
-        backendUpdates.start_date = dateRangeMatch[1];
-        backendUpdates.end_date = dateRangeMatch[2];
-      } else {
-        const singleDate = updates.dates.match(/\d{4}-\d{2}-\d{2}/)?.[0];
-        const fallbackDate = singleDate || new Date().toISOString().split('T')[0];
-        backendUpdates.start_date = fallbackDate;
-        backendUpdates.end_date = fallbackDate;
-      }
+      const { start, end } = parseDateRange(updates.dates);
+      if (start) backendUpdates.start_date = start;
+      if (end) backendUpdates.end_date = end;
     }
     if (updates.flexible_dates !== undefined) backendUpdates.flexible_dates = updates.flexible_dates;
     if (updates.preferences !== undefined) backendUpdates.preferences = updates.preferences;
@@ -355,7 +375,9 @@ export async function updateTrip(tripId: string, updates: Partial<Answers>): Pro
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to update trip: ${response.status}`);
+      const errorData = await response.json().catch(() => ({}));
+      const message = errorData.error || `Failed to update trip: ${response.status}`;
+      throw new Error(message);
     }
 
     const result = await response.json();

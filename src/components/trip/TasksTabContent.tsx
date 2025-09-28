@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { TripState, Tasks } from "@/lib/types/trip";
-import { updateTaskCompletion, regenerateTasks } from "@/lib/api/trip";
+import { updateTaskCompletion } from "@/lib/api/trip";
 
 interface TasksTabContentProps {
   tripData: TripState;
@@ -14,8 +14,6 @@ export function TasksTabContent({ tripData, tripId, onTaskUpdate }: TasksTabCont
   // Local state for optimistic updates
   const [localTasks, setLocalTasks] = useState<Tasks | undefined>(tripData.tasks);
   const [updatingTasks, setUpdatingTasks] = useState<Set<string>>(new Set());
-  const [error, setError] = useState<string | null>(null);
-  const [isRegenerating, setIsRegenerating] = useState(false);
 
   // Update local state when tripData changes (from external updates)
   useEffect(() => {
@@ -56,7 +54,6 @@ export function TasksTabContent({ tripData, tripId, onTaskUpdate }: TasksTabCont
 
     // Add to updating set for visual feedback
     setUpdatingTasks(prev => new Set(prev).add(taskId));
-    setError(null);
 
     try {
       const result = await updateTaskCompletion(tripId, taskId, newDone);
@@ -69,7 +66,6 @@ export function TasksTabContent({ tripData, tripId, onTaskUpdate }: TasksTabCont
       // We don't call onTaskUpdate() here to avoid re-rendering
     } catch (err) {
       console.error('Error updating task:', err);
-      setError(err instanceof Error ? err.message : 'Failed to update task');
 
       // Revert optimistic update on error
       setLocalTasks(prevTasks => {
@@ -94,28 +90,6 @@ export function TasksTabContent({ tripData, tripId, onTaskUpdate }: TasksTabCont
     }
   };
 
-  const handleRegenerateTasks = async () => {
-    setIsRegenerating(true);
-    setError(null);
-
-    try {
-      const result = await regenerateTasks(tripId);
-
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to regenerate tasks');
-      }
-
-      // Call the callback to refresh the trip data
-      if (onTaskUpdate) {
-        onTaskUpdate();
-      }
-    } catch (err) {
-      console.error('Error regenerating tasks:', err);
-      setError(err instanceof Error ? err.message : 'Failed to regenerate tasks');
-    } finally {
-      setIsRegenerating(false);
-    }
-  };
 
   const getTaskStats = () => {
     const totalGeneral = generalTasks.length;
@@ -136,26 +110,6 @@ export function TasksTabContent({ tripData, tripId, onTaskUpdate }: TasksTabCont
 
   const stats = getTaskStats();
 
-  // Error display
-  if (error) {
-    return (
-      <div className="rounded-2xl border border-red-200 bg-red-50 p-6 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="text-red-600">⚠️</div>
-          <div>
-            <h3 className="font-semibold text-red-900">Error updating task</h3>
-            <p className="text-sm text-red-700">{error}</p>
-            <button
-              onClick={() => setError(null)}
-              className="mt-2 text-sm text-red-600 underline hover:text-red-800"
-            >
-              Dismiss
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   if (generalTasks.length === 0 && !hasDestinationTasks) {
     return (
@@ -180,27 +134,8 @@ export function TasksTabContent({ tripData, tripId, onTaskUpdate }: TasksTabCont
     <div className="space-y-6">
       {/* Task Summary */}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4">
           <h2 className="text-xl font-semibold text-slate-900">Task Progress</h2>
-          <button
-            onClick={handleRegenerateTasks}
-            disabled={isRegenerating}
-            className="flex items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isRegenerating ? (
-              <>
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600"></div>
-                Regenerating...
-              </>
-            ) : (
-              <>
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Regenerate with AI
-              </>
-            )}
-          </button>
         </div>
         <div className="grid gap-4 md:grid-cols-3">
           <div className="rounded-xl bg-slate-50 p-4">

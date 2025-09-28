@@ -140,26 +140,7 @@ export type UpdateTrip = z.infer<typeof UpdateTripSchema>;
 
 // Legacy utility function for backward compatibility
 export const transformAnswersToDatabase = (answers: Answers): CreateTrip => {
-  // Parse dates string into start_date and end_date
-  const parseDateRange = (dateString: string) => {
-    // Handle various date formats like "2024-01-15 to 2024-01-25"
-    const dateRangeMatch = dateString.match(/(\d{4}-\d{2}-\d{2}).*?(\d{4}-\d{2}-\d{2})/);
-    if (dateRangeMatch) {
-      return {
-        start_date: dateRangeMatch[1],
-        end_date: dateRangeMatch[2],
-      };
-    }
-    // Fallback - assume single date for now
-    const singleDate = dateString.match(/\d{4}-\d{2}-\d{2}/)?.[0];
-    const fallbackDate = singleDate || new Date().toISOString().split('T')[0];
-    return {
-      start_date: fallbackDate,
-      end_date: fallbackDate,
-    };
-  };
-
-  const { start_date, end_date } = parseDateRange(answers.dates);
+  const { start_date, end_date } = parseDateRangeFromAnswers(answers.dates);
 
   return {
     destinations: answers.destinations,
@@ -181,48 +162,81 @@ export const transformAnswersToDatabase = (answers: Answers): CreateTrip => {
   };
 };
 
+const parseDateInput = (value?: string | null) => {
+  if (!value) return undefined;
+  const date = new Date(value);
+  if (!Number.isNaN(date.getTime())) {
+    return date.toISOString().split('T')[0];
+  }
+  const isoMatch = value.match(/\d{4}-\d{2}-\d{2}/)?.[0];
+  return isoMatch ?? undefined;
+};
+
+export const parseDateRangeFromAnswers = (value: string) => {
+  const parts = value.split(/\s+to\s+/i).map((part) => part.trim()).filter(Boolean);
+  if (!parts.length) {
+    const fallback = new Date().toISOString().split('T')[0];
+    return { start_date: fallback, end_date: fallback };
+  }
+
+  const start = parseDateInput(parts[0]);
+  const end = parts[1] ? parseDateInput(parts[1]) : start;
+
+  const fallback = new Date().toISOString().split('T')[0];
+  return {
+    start_date: start ?? fallback,
+    end_date: end ?? start ?? fallback,
+  };
+};
+
 // Utility function to create a complete trip from answers, itinerary, and tasks
 export const createTripFromComponents = (
   answers: Answers,
   itinerary: ProposedItinerary | null,
   tasks: Tasks | null
 ): CreateTrip => {
-  // Parse dates string into start_date and end_date
-  const parseDateRange = (dateString: string) => {
-    // Handle various date formats like "2024-01-15 to 2024-01-25"
-    const dateRangeMatch = dateString.match(/(\d{4}-\d{2}-\d{2}).*?(\d{4}-\d{2}-\d{2})/);
-    if (dateRangeMatch) {
-      return {
-        start_date: dateRangeMatch[1],
-        end_date: dateRangeMatch[2],
-      };
+  const { start_date, end_date } = parseDateRangeFromAnswers(answers.dates);
+
+  const ensureArray = (value: unknown): string[] | null => {
+    if (!value) return null;
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string') {
+      return value ? [value] : null;
     }
-    // Fallback - assume single date for now
-    const singleDate = dateString.match(/\d{4}-\d{2}-\d{2}/)?.[0];
-    const fallbackDate = singleDate || new Date().toISOString().split('T')[0];
-    return {
-      start_date: fallbackDate,
-      end_date: fallbackDate,
-    };
+    return null;
   };
 
-  const { start_date, end_date } = parseDateRange(answers.dates);
+  const destinations = Array.isArray(answers.destinations)
+    ? answers.destinations
+    : ensureArray(answers.destinations) ?? [];
 
   return {
-    destinations: answers.destinations,
+    destinations,
     starting_point: answers.starting_point || null,
     end_point: answers.end_point || null,
     start_date,
     end_date,
     flexible_dates: answers.flexible_dates,
     preferences: answers.preferences, // Now stored as string to match frontend
-    transportation: answers.transportation.length > 0 ? answers.transportation : null,
-    things_to_do: answers.things_to_do.length > 0 ? answers.things_to_do : null, // Now array to match frontend
-    food_dietary: answers.food_dietary.length > 0 ? answers.food_dietary : null,
+    transportation:
+      Array.isArray(answers.transportation) && answers.transportation.length > 0
+        ? answers.transportation
+        : null,
+    things_to_do:
+      Array.isArray(answers.things_to_do) && answers.things_to_do.length > 0
+        ? answers.things_to_do
+        : null, // Now array to match frontend
+    food_dietary:
+      Array.isArray(answers.food_dietary) && answers.food_dietary.length > 0
+        ? answers.food_dietary
+        : null,
     citizenship: answers.citizenship,
     budget: answers.budget, // Now stored as string to match frontend
     currency: answers.currency || null,
-    purpose_of_trip: answers.purpose_of_trip.length > 0 ? answers.purpose_of_trip : null, // Now array to match frontend
+    purpose_of_trip:
+      Array.isArray(answers.purpose_of_trip) && answers.purpose_of_trip.length > 0
+        ? answers.purpose_of_trip
+        : null, // Now array to match frontend
     itinerary: itinerary,
     tasks: tasks,
   };

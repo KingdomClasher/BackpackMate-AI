@@ -22,7 +22,22 @@ export function BasicInfoTab({ tripData, tripId, onUpdate }: BasicInfoTabProps) 
   const [editingField, setEditingField] = useState<keyof Answers | null>(null);
   const [localAnswers, setLocalAnswers] = useState<Answers>(tripData.answers);
   const [saving, setSaving] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const regenFields: Array<keyof Answers> = [
+    'destinations',
+    'dates',
+    'budget',
+    'purpose_of_trip',
+    'things_to_do',
+    'transportation',
+    'starting_point',
+    'end_point',
+    'flexible_dates',
+    'preferences',
+    'citizenship',
+  ];
 
   // Update local state when tripData changes
   useEffect(() => {
@@ -76,8 +91,15 @@ export function BasicInfoTab({ tripData, tripId, onUpdate }: BasicInfoTabProps) 
     setSaving(true);
     setError(null);
 
+    const shouldRegenerate = regenFields.includes(field);
+
     try {
       const updates = { [field]: value };
+
+      if (shouldRegenerate) {
+        setRegenerating(true);
+      }
+
       const result = await updateTrip(tripId, updates);
 
       if (!result.success) {
@@ -87,6 +109,7 @@ export function BasicInfoTab({ tripData, tripId, onUpdate }: BasicInfoTabProps) 
       setLocalAnswers(prev => ({ ...prev, [field]: value }));
       setEditingField(null);
 
+      // Trigger refresh immediately
       if (onUpdate) {
         onUpdate();
       }
@@ -95,6 +118,9 @@ export function BasicInfoTab({ tripData, tripId, onUpdate }: BasicInfoTabProps) 
       // Revert local state
       setLocalAnswers(tripData.answers);
     } finally {
+      if (shouldRegenerate) {
+        setRegenerating(false);
+      }
       setSaving(false);
     }
   };
@@ -355,6 +381,21 @@ export function BasicInfoTab({ tripData, tripId, onUpdate }: BasicInfoTabProps) 
 
   return (
     <div className="space-y-6">
+      {/* Regeneration Status */}
+      {regenerating && (
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-blue-300 border-t-blue-600"></div>
+            <div>
+              <h3 className="font-semibold text-blue-900">Updating Your Trip</h3>
+              <p className="text-sm text-blue-700">
+                AI is regenerating your itinerary and tasks based on the updated information...
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Detailed Information */}
       <div className="grid gap-6 lg:grid-cols-2">
         {infoSections.map((section, index) => (

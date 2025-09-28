@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, IBM_Plex_Mono } from "next/font/google";
 import { Providers } from "./providers";
 import "./globals.css";
+import "./cedar-os/cedar-styles.css";
 
 const sans = Inter({
   variable: "--font-geist-sans",

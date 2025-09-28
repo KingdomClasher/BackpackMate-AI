@@ -1,0 +1,100 @@
+/* CedarOS Font Consistency Overrides */
+
+/* Override CedarOS chat message fonts to match main UI */
+.cedar-chat-message,
+.cedar-chat-message * {
+  font-family: var(--font-geist-sans), system-ui, sans-serif !important;
+}
+
+/* Override assistant message font-serif to use sans-serif */
+.prose.font-serif,
+.prose.font-serif * {
+  font-family: var(--font-geist-sans), system-ui, sans-serif !important;
+}
+
+/* Ensure all CedarOS text elements use the main UI font */
+[data-cedar],
+[data-cedar] *,
+.cedar-os,
+.cedar-os *,
+.cedar-chat,
+.cedar-chat *,
+.cedar-sidepanel,
+.cedar-sidepanel *,
+.cedar-chat-input,
+.cedar-chat-input *,
+.cedar-chat-messages,
+.cedar-chat-messages * {
+  font-family: var(--font-geist-sans), system-ui, sans-serif !important;
+}
+
+/* Override specific CedarOS component fonts */
+.cedar-os .prose,
+.cedar-os .prose-sm,
+.cedar-chat .prose,
+.cedar-chat .prose-sm,
+.cedar-chat-message .prose,
+.cedar-chat-message .prose-sm {
+  font-family: var(--font-geist-sans), system-ui, sans-serif !important;
+}
+
+/* Ensure chat input uses consistent font */
+.cedar-os .ProseMirror,
+.cedar-chat .ProseMirror,
+.cedar-chat-input .ProseMirror {
+  font-family: var(--font-geist-sans), system-ui, sans-serif !important;
+}
+
+/* Override any remaining serif fonts in chat */
+.cedar-os [class*="font-serif"],
+.cedar-chat [class*="font-serif"],
+.cedar-chat-message [class*="font-serif"] {
+  font-family: var(--font-geist-sans), system-ui, sans-serif !important;
+}
+
+/* Ensure consistent font weight and styling */
+.cedar-os .text-sm,
+.cedar-chat .text-sm,
+.cedar-chat-message .text-sm {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+/* Chat header consistency */
+.cedar-os .font-bold,
+.cedar-chat .font-bold {
+  font-weight: 600;
+}
+
+/* Chat button consistency */
+.cedar-os button,
+.cedar-chat button,
+.cedar-chat-input button {
+  font-family: var(--font-geist-sans), system-ui, sans-serif !important;
+}
+
+/* Specific targeting for assistant messages that use serif */
+.cedar-chat-message .prose.font-serif,
+.cedar-chat-messages .prose.font-serif {
+  font-family: var(--font-geist-sans), system-ui, sans-serif !important;
+}
+
+/* Color consistency with main UI */
+.cedar-chat-input {
+  background-color: rgb(248 250 252);
+  border-color: rgb(226 232 240);
+}
+
+.dark .cedar-chat-input {
+  background-color: rgb(75 85 99 / 0.8);
+  border-color: rgb(75 85 99);
+}
+
+/* Ensure text colors match main UI */
+.cedar-chat-message .prose {
+  color: rgb(30 41 59);
+}
+
+.dark .cedar-chat-message .prose {
+  color: rgb(241 245 249);
+}
