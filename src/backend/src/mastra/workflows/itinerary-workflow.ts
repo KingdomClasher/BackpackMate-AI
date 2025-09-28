@@ -1,11 +1,11 @@
 import { createStep, createWorkflow } from '@mastra/core/workflows';
 import { z } from 'zod';
 import { tripService } from '../../services/tripService';
-import { transformAnswersToDatabase, AnswersSchema } from '../../schemas/trip';
+import { transformAnswersToDatabase, AnswerSchema } from '../../schemas/trip';
 
 const planInput = z.object({
   prompt: z.string().describe('Trip request, e.g., "7 days Spain -> Portugal -> Morocco, $700 budget"'),
-  answers: AnswersSchema.optional().describe('Optional onboarding answers to create a trip'),
+  answers: AnswerSchema.optional().describe('Optional onboarding answers to create a trip'),
   tripId: z.string().uuid().optional().describe('Optional existing trip ID to update'),
 });
 
@@ -68,13 +68,13 @@ FORMAT (markdown):
 
       // Save the generated itinerary
       trip = await tripService.updateTrip(trip.id, {
-        itinerary: { markdown: text, generatedAt: new Date().toISOString() },
+        itinerary: { markdown: text, generatedAt: new Date().toISOString() } as any,
       });
     } else if (inputData.tripId) {
       // Update existing trip with itinerary
       tripId = inputData.tripId;
       trip = await tripService.updateTrip(inputData.tripId, {
-        itinerary: { markdown: text, generatedAt: new Date().toISOString() },
+        itinerary: { markdown: text, generatedAt: new Date().toISOString() } as any,
       });
     }
 

@@ -4,23 +4,18 @@ import { itineraryWorkflow } from './workflows/itinerary-workflow';
 import type { Mastra } from '@mastra/core/mastra';
 import { mastra } from './index';
 import {
-  AnswersSchema,
+  AnswerSchema,
   ChatRequest,
   ChatRequestSchema,
-  ProposalResponseSchema,
   CreateTripSchema,
   UpdateTripSchema,
-  transformAnswersToDatabase
+  createTripFromComponents
 } from "../schemas/trip";
-import { generateItineraryProposal } from "../utils/itineraryGenerator";
 import { processAssistantMessage } from "../utils/assistant";
 import { createSSEStream, streamJSONEvent } from "../utils/streamUtils";
 import { tripService } from "../services/tripService";
 import { generateIcsFromTrip } from "../utils/ics";
 
-const ProposalRequestSchema = z.object({
-  answers: AnswersSchema,
-});
 
 // Request/Response schemas for trip routes
 const TripIdParamsSchema = z.object({
@@ -29,22 +24,6 @@ const TripIdParamsSchema = z.object({
 
 // Original routes (keeping for backward compatibility)
 const originalRoutes = [
-  registerApiRoute("/onboarding/itinerary-proposal", {
-    method: "POST",
-    handler: async (context) => {
-      try {
-        const body = await context.req.json();
-        const { answers } = ProposalRequestSchema.parse(body);
-        const proposal = generateItineraryProposal(answers);
-        return context.json(ProposalResponseSchema.parse(proposal));
-      } catch (error) {
-        console.error("Itinerary proposal failed", error);
-        const message =
-          error instanceof Error ? error.message : "Unable to generate itinerary";
-        return context.json({ error: message }, 500);
-      }
-    },
-  }),
   registerApiRoute("/chat/execute-function", {
     method: "POST",
     handler: async (context) => {
@@ -164,12 +143,23 @@ const tripRoutes = [
     handler: async (context) => {
       try {
         const body = await context.req.json();
-        const answers = AnswersSchema.parse(body); // this comes from trip.ts which is the questions from which prompt would be made.
-        
-        // call the iterinary and taks !! 
-        
-        const tripData = transformAnswersToDatabase(answers);  // format it to supabase!! 
-        
+        const answers = AnswerSchema.parse(body);
+
+        // For now, create placeholder itinerary and tasks
+        // TODO: This endpoint will be updated to generate actual itinerary and tasks
+        const placeholderItinerary = {
+          days: [],
+          generatedAt: new Date().toISOString(),
+          summary: "Placeholder itinerary - to be generated",
+        };
+
+        const placeholderTasks = {
+          generalTasks: [],
+          destinationSpecificTasks: [],
+        };
+
+        // Use the centralized function to create trip
+        const tripData = createTripFromComponents(answers, placeholderItinerary, placeholderTasks);
         const trip = await tripService.createTrip(tripData);
 
         // const prompt =
@@ -179,8 +169,8 @@ const tripRoutes = [
         //   `Preferences: ${answers.preferences || 'none'}\n` +
         //   `Budget: ${answers.budget || 'unspecified'}\n` +
         //   `Citizenship: ${answers.citizenship || 'unspecified'}`;
-        
-        
+
+
         // const agent = mastra?.getAgent('travelAgent');
         // const stream = await agent.stream([{ role: 'user', content: prompt }]);
         // let text = '';

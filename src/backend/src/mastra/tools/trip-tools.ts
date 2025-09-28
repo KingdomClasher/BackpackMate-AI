@@ -4,8 +4,8 @@ import { tripService } from '../../services/tripService';
 import {
   CreateTripSchema,
   UpdateTripSchema,
-  transformAnswersToDatabase,
-  AnswersSchema
+  createTripFromComponents,
+  AnswerSchema
 } from '../../schemas/trip';
 
 // Tool to create a new trip
@@ -35,10 +35,24 @@ export const createTripTool = createTool({
 export const createTripFromAnswersTool = createTool({
   id: 'create-trip-from-answers',
   description: 'Create a trip from user onboarding answers',
-  inputSchema: AnswersSchema,
+  inputSchema: AnswerSchema,
   execute: async ({ context }) => {
     try {
-      const tripData = transformAnswersToDatabase(context);
+      // Create placeholder itinerary and tasks for now
+      // TODO: This tool will be updated to accept actual itinerary and tasks
+      const placeholderItinerary = {
+        days: [],
+        generatedAt: new Date().toISOString(),
+        summary: "Placeholder itinerary - to be generated",
+      };
+
+      const placeholderTasks = {
+        generalTasks: [],
+        destinationSpecificTasks: [],
+      };
+
+      // Use the centralized function to create trip
+      const tripData = createTripFromComponents(context, placeholderItinerary, placeholderTasks);
       const trip = await tripService.createTrip(tripData);
       return {
         success: true,

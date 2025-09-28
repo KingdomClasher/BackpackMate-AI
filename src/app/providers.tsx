@@ -6,7 +6,7 @@ import { TripProvider } from "@/components/providers/TripProvider";
 
 const llmProvider: ProviderConfig = {
   provider: "mastra",
-  baseURL: process.env.NEXT_PUBLIC_MASTRA_URL || "http://localhost:4111",
+  baseURL: process.env.NEXT_PUBLIC_MASTRA_URL || "http://localhost:4112",
   chatPath: "/chat/execute-function",
 };
 

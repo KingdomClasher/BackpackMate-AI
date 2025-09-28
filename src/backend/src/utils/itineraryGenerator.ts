@@ -1,5 +1,5 @@
 import { addDays, differenceInCalendarDays, format, parse } from "date-fns";
-import { Answers, ItineraryDay, ItineraryItem, ItineraryTask, ProposalResponse } from "../schemas/trip";
+import { Answers, ItineraryDay, ItineraryItem, ItineraryTask } from "../schemas/trip";
 
 const DEFAULT_GENERAL_TASKS: ItineraryTask[] = [
   { id: "passport-check", text: "Confirm passport validity (6+ months)", done: false },
@@ -69,12 +69,16 @@ const parseTripDates = (raw: string): { start: Date; end: Date } => {
   };
 };
 
-const splitDestinations = (raw: string): string[] =>
-  raw
+const splitDestinations = (raw: string | string[]): string[] => {
+  if (Array.isArray(raw)) {
+    return raw.map((city) => city.replace(/(^[a-z])/g, (match) => match.toUpperCase()));
+  }
+  return raw
     .split(/,|\n|\/|and/) // handle various separators
     .map((token) => token.trim())
     .filter(Boolean)
     .map((city) => city.replace(/(^[a-z])/g, (match) => match.toUpperCase()));
+};
 
 const buildDayItems = (city: string, dayIndex: number): ItineraryItem[] => {
   const base = city.toLowerCase();
@@ -119,66 +123,4 @@ const buildDayItems = (city: string, dayIndex: number): ItineraryItem[] => {
       note: `End the day with a memorable local experience in ${city}.`,
     },
   ];
-};
-
-export const generateItineraryProposal = (answers: Answers): ProposalResponse => {
-  const destinations = splitDestinations(answers.destinations);
-  const { start, end } = parseTripDates(answers.dates);
-  const totalDays = Math.max(1, differenceInCalendarDays(end, start) + 1);
-
-  const cityCount = Math.max(destinations.length, 1);
-  const daysPerCity = Math.max(1, Math.floor(totalDays / cityCount));
-
-  const days: ItineraryDay[] = [];
-  let currentDate = start;
-  let dayCounter = 0;
-
-  destinations.forEach((city) => {
-    const allocation = dayCounter + daysPerCity > totalDays ? totalDays - dayCounter : daysPerCity;
-    for (let i = 0; i < allocation; i += 1) {
-      const items = buildDayItems(city, i);
-      days.push({
-        id: `${city}-${format(currentDate, "yyyy-MM-dd")}`,
-        date: format(currentDate, "yyyy-MM-dd"),
-        city,
-        items,
-      });
-      currentDate = addDays(currentDate, 1);
-      dayCounter += 1;
-    }
-  });
-
-  // If allocation leaves remaining days (e.g., more days than destinations), fill with last city
-  while (dayCounter < totalDays) {
-    const city = destinations[destinations.length - 1] ?? "Destination";
-    const items = buildDayItems(city, dayCounter);
-    days.push({
-      id: `${city}-${format(currentDate, "yyyy-MM-dd")}`,
-      date: format(currentDate, "yyyy-MM-dd"),
-      city,
-      items,
-    });
-    currentDate = addDays(currentDate, 1);
-    dayCounter += 1;
-  }
-
-  const uniqueCities = Array.from(new Set(days.map((day) => day.city)));
-  const destinationTasks = uniqueCities.reduce((acc, city) => {
-    acc[city] = createCityTasks(city);
-    return acc;
-  }, {} as Record<string, ItineraryTask[]>);
-
-  const summary = `A ${totalDays}-day getaway covering ${uniqueCities.join(
-    ", "
-  )}, balancing signature experiences with downtime tailored to your preferences.`;
-
-  return {
-    itinerary: {
-      days,
-      generatedAt: new Date().toISOString(),
-      summary,
-    },
-    generalTasks: DEFAULT_GENERAL_TASKS,
-    destinationTasks,
-  };
 };

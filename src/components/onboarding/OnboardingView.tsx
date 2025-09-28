@@ -1,8 +1,9 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState, useCallback } from "react";
-import { CORE_QUESTIONS, ProposalResponseSchema, QAKey, Answers } from "@/lib/types/trip";
+import { CORE_QUESTIONS, QAKey, Answers } from "@/lib/types/trip";
 import { useTripDispatch, useTripState } from "@/components/providers/TripProvider";
+import { useRouter } from "next/navigation";
 import { LocationAutocomplete } from "@/components/onboarding/inputs/LocationAutocomplete";
 import { DateRangePicker } from "@/components/onboarding/inputs/DateRangePicker";
 import { CountryDropdown } from "@/components/onboarding/inputs/CountryDropdown";
@@ -14,7 +15,7 @@ import { FlexibleDatesPicker } from "@/components/onboarding/inputs/FlexibleDate
 
 
 const buildApiUrl = (path: string) => {
-  const base = process.env.NEXT_PUBLIC_MASTRA_URL ?? "";
+  const base = process.env.NEXT_PUBLIC_MASTRA_URL ?? "http://localhost:4112";
   const normalizedBase = base.endsWith("/") ? base.slice(0, -1) : base;
   return `${normalizedBase}${path}`;
 };
@@ -24,6 +25,7 @@ const buildApiUrl = (path: string) => {
 export const OnboardingView = () => {
   const state = useTripState();
   const dispatch = useTripDispatch();
+  const router = useRouter();
 
   const currentQuestion = useMemo(() => {
     return CORE_QUESTIONS[state.questionIndex] ?? null;
@@ -32,53 +34,47 @@ export const OnboardingView = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (state.proposedItinerary && !state.approvedItinerary) {
-      setIsLoading(false);
-    }
-  }, [state.proposedItinerary, state.approvedItinerary]);
 
   const progress = useMemo(() => {
     const answered = Math.min(state.answeredKeys.length, CORE_QUESTIONS.length);
     return Math.round((answered / CORE_QUESTIONS.length) * 100);
   }, [state.answeredKeys.length]);
 
-  const handleRequestProposal = async (
+  const handleCreateTrip = async (
     answersOverride?: Answers
   ) => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const response = await fetch(buildApiUrl("/onboarding/itinerary-proposal"), {
+      const response = await fetch(buildApiUrl("/trips/from-answers"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ answers: answersOverride ?? state.answers }),
+        body: JSON.stringify(answersOverride ?? state.answers),
       });
 
       if (!response.ok) {
-        throw new Error(`Proposal failed with status ${response.status}`);
+        throw new Error(`Trip creation failed with status ${response.status}`);
       }
 
       const payload = await response.json();
-      const parsed = ProposalResponseSchema.parse(payload);
-      dispatch({ type: "SET_PROPOSED_ITINERARY", value: parsed.itinerary });
-      if (parsed.generalTasks) {
-        dispatch({ type: "SET_GENERAL_TASKS", value: parsed.generalTasks });
+
+      if (!payload.success || !payload.data?.id) {
+        throw new Error(payload.error || "Failed to create trip");
       }
-      if (parsed.destinationTasks) {
-        dispatch({ type: "SET_DESTINATION_TASKS", value: parsed.destinationTasks });
-      }
+
+      // Navigate to the trip page
+      router.push(`/trip/${payload.data.id}`);
+
     } catch (err) {
       console.error(err);
       setError(
         err instanceof Error
           ? err.message
-          : "Sorry, we couldn't generate a proposal. Please try again."
+          : "Sorry, we couldn't create your trip. Please try again."
       );
-    } finally {
       setIsLoading(false);
     }
   };
@@ -128,11 +124,11 @@ export const OnboardingView = () => {
 
     const isFinalQuestion = state.questionIndex >= CORE_QUESTIONS.length - 1;
     if (isFinalQuestion) {
-      await handleRequestProposal();
+      await handleCreateTrip();
     } else {
       dispatch({ type: "ADVANCE_QUESTION" });
     }
-  }, [isLoading, currentQuestion, state.answers, dispatch, handleRequestProposal]);
+  }, [isLoading, currentQuestion, state.answers, state.questionIndex, dispatch, handleCreateTrip]);
 
   const handleBack = useCallback(() => {
     if (state.questionIndex > 0) {
@@ -291,13 +287,6 @@ export const OnboardingView = () => {
     }
   };
 
-  const handleApprove = () => {
-    dispatch({ type: "APPROVE_ITINERARY" });
-  };
-
-  const handleRegenerate = async () => {
-    await handleRequestProposal();
-  };
 
 
   if (isLoading || !currentQuestion) {
@@ -306,13 +295,13 @@ export const OnboardingView = () => {
         <div className="mx-auto flex min-h-screen max-w-4xl flex-col items-center justify-center px-6 py-12">
           <div className="w-full rounded-3xl border border-slate-200 bg-white p-10 shadow-sm">
             <p className="text-sm font-medium uppercase tracking-wide text-slate-400">
-              Generating itinerary
+              Creating your trip
             </p>
             <h1 className="mt-3 text-3xl font-semibold text-slate-900">
-              Drafting your itinerary…
+              Crafting your perfect journey…
             </h1>
             <p className="mt-2 text-base text-slate-600">
-              Balancing destinations, timing, and preferences. This should only take a moment.
+              Generating your personalized itinerary and travel tasks. This should only take a moment.
             </p>
             {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
             <div className="mt-6 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
@@ -416,24 +405,6 @@ export const OnboardingView = () => {
                     </button>
                   </div>
 
-                  {/* Keyboard shortcuts hint */}
-                  <div className="text-center text-xs text-slate-400">
-                    Press <kbd className="px-1.5 py-0.5 bg-slate-100 rounded text-slate-600 font-mono">Enter</kbd> to {(() => {
-                      const optionalFields = ['preferences', 'things_to_do', 'food_dietary'];
-                      const currentAnswer = state.answers[currentQuestion.id];
-                      const hasContent =
-                        (typeof currentAnswer === 'string' && currentAnswer.trim().length > 0) ||
-                        (Array.isArray(currentAnswer) && currentAnswer.length > 0);
-
-                      if (optionalFields.includes(currentQuestion.id) && !hasContent) {
-                        return "skip";
-                      }
-                      return "continue";
-                    })()}
-                    {state.questionIndex > 0 && (
-                      <> or <kbd className="px-1.5 py-0.5 bg-slate-100 rounded text-slate-600 font-mono">Esc</kbd> to go back</>
-                    )}
-                  </div>
                 </div>
               </div>
             </div>

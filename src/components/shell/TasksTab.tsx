@@ -2,12 +2,12 @@ import { useCedarStore, useChatInput } from "cedar-os";
 import { useTripDispatch, useTripState } from "@/components/providers/TripProvider";
 
 export const TasksTab = () => {
-  const { generalTasks, destinationTasks } = useTripState();
+  const { tasks } = useTripState();
   const dispatch = useTripDispatch();
   const setShowChat = useCedarStore((store) => store.setShowChat);
   const { setOverrideInputContent } = useChatInput();
 
-  const hasDestinationTasks = Object.keys(destinationTasks).length > 0;
+  const hasDestinationTasks = tasks?.destinationSpecificTasks.length ?? 0 > 0;
 
   const handleGeneralToggle = (id: string) => {
     dispatch({ type: "TOGGLE_GENERAL_TASK", id });
@@ -41,7 +41,7 @@ export const TasksTab = () => {
           </button>
         </header>
         <ul className="space-y-2">
-          {generalTasks.map((task) => (
+          {tasks?.generalTasks.map((task) => (
             <li
               key={task.id}
               className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
@@ -77,7 +77,7 @@ export const TasksTab = () => {
           </div>
         ) : (
           <div className="space-y-4">
-            {Object.entries(destinationTasks).map(([city, tasks]) => (
+            {tasks?.destinationSpecificTasks.map((task) => (
               <div key={city} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="mb-3 flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-slate-800">{city}</h3>
@@ -92,7 +92,7 @@ export const TasksTab = () => {
                   </button>
                 </div>
                 <ul className="space-y-2 text-sm">
-                  {tasks.map((task) => (
+                  {tasks?.destinationSpecificTasks.map((task) => (
                     <li
                       key={task.id}
                       className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2"

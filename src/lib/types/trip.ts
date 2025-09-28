@@ -51,6 +51,14 @@ export const ItineraryTaskSchema = z.object({
 });
 export type ItineraryTask = z.infer<typeof ItineraryTaskSchema>;
 
+export const DestinationSpecificTaskSchema = z.object({
+  location: z.string(),
+  id: z.string(),
+  text: z.string(),
+  done: z.boolean().default(false),
+});
+export type DestinationSpecificTask = z.infer<typeof DestinationSpecificTaskSchema>;
+
 export const ItineraryItemSchema = z.object({
   id: z.string(),
   timeStart: z.string(),
@@ -69,6 +77,13 @@ export const ItineraryDaySchema = z.object({
 });
 export type ItineraryDay = z.infer<typeof ItineraryDaySchema>;
 
+export const TasksSchema = z.object({
+  generalTasks: z.array(ItineraryTaskSchema),
+  destinationSpecificTasks: z.array(DestinationSpecificTaskSchema),
+});
+export type Tasks = z.infer<typeof TasksSchema>;
+
+// Keep the old schema for backward compatibility
 export const DestinationTasksSchema = z.record(
   z.string(),
   z.array(ItineraryTaskSchema)
@@ -82,12 +97,6 @@ export const ProposedItinerarySchema = z.object({
 });
 export type ProposedItinerary = z.infer<typeof ProposedItinerarySchema>;
 
-export const ProposalResponseSchema = z.object({
-  itinerary: ProposedItinerarySchema,
-  generalTasks: z.array(ItineraryTaskSchema).optional(),
-  destinationTasks: DestinationTasksSchema.optional(),
-});
-export type ProposalResponse = z.infer<typeof ProposalResponseSchema>;
 
 export const TripStateSchema = z.object({
   answers: AnswerSchema,
@@ -95,8 +104,8 @@ export const TripStateSchema = z.object({
   questionIndex: z.number().min(0),
   proposedItinerary: ProposedItinerarySchema.nullable(),
   approvedItinerary: z.array(ItineraryDaySchema).nullable(),
-  generalTasks: z.array(ItineraryTaskSchema),
-  destinationTasks: DestinationTasksSchema,
+  // New tasks format
+  tasks: TasksSchema.optional(),
   dockOpen: z.boolean(),
   pendingMessage: z.string().optional(),
   activeModal: z
@@ -150,8 +159,8 @@ export const CORE_QUESTIONS: { id: QAKey; question: string }[] = [
 ];
 
 export const DEFAULT_GENERAL_TASKS: ItineraryTask[] = [
-  { id: "passport-check", text: "Confirm passport validity (6 months)", done: false },
-  { id: "travel-insurance", text: "Purchase travel insurance", done: false },
+  { id: "passport-check", text: "Confirm passport validity (at least 6 months before expiration)", done: false },
+  { id: "travel-insurance", text: "Purchase international travel insurance", done: false },
   { id: "vaccines", text: "Review vaccine requirements", done: false },
   { id: "visa-check", text: "Check visa requirements", done: false },
 ];
@@ -177,8 +186,11 @@ export const createInitialTripState = (): TripState =>
     questionIndex: 0,
     proposedItinerary: null,
     approvedItinerary: null,
-    generalTasks: DEFAULT_GENERAL_TASKS,
-    destinationTasks: {},
+    // New tasks format
+    tasks: {
+      generalTasks: DEFAULT_GENERAL_TASKS,
+      destinationSpecificTasks: [],
+    },
     dockOpen: false,
     pendingMessage: undefined,
     activeModal: null,
